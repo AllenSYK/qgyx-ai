@@ -93,10 +93,14 @@ export default function AuthForm({ mode }: AuthFormProps) {
     }
 
     setLoading(true);
-    const authResult = await supabase.auth.signUp({
+
+    const authResult = await supabase.auth.signInWithOtp({
       email,
-      password
+      options: {
+        shouldCreateUser: true
+      }
     });
+
     setLoading(false);
 
     if (authResult.error) {
@@ -125,7 +129,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
     const result = await supabase.auth.verifyOtp({
       email,
       token: otp,
-      type: "signup"
+      type: "email"
     });
 
     setLoading(false);
@@ -148,9 +152,11 @@ export default function AuthForm({ mode }: AuthFormProps) {
     const supabase = createSupabaseBrowserClient();
     setLoading(true);
 
-    const result = await supabase.auth.resend({
-      type: "signup",
-      email
+    const result = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        shouldCreateUser: true
+      }
     });
 
     setLoading(false);
