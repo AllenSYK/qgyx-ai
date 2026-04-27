@@ -19,10 +19,9 @@ export default function MobileBottomNav() {
   function go(path: string) {
     setNavLoading(true);
 
-    function go(path: string) {
-  setNavLoading(true);
+    setTimeout(() => {
   router.push(path);
-}
+}, 50);
   }
 
   return (
