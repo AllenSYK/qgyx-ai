@@ -31,11 +31,7 @@ export class AiJsonFormatError extends Error {
   }
 }
 
-async function postChatCompletion({
-  body
-}: {
-  body: Record<string, unknown>;
-}) {
+async function postQwenChatCompletion(body: Record<string, unknown>) {
   const apiKey = process.env.DASHSCOPE_API_KEY;
 
   if (!apiKey) {
@@ -205,108 +201,27 @@ function normalizeReview(input: unknown): ReviewResult {
   };
 }
 
-export async function analyzeImageWithQwen({
+export async function generateQuizFromImageWithQwen({
   base64,
-  mimeType
+  mimeType,
+  questionCount = 3
 }: {
   base64: string;
   mimeType: string;
-}) {
+  questionCount?: number;
+}): Promise<Quiz> {
   const messages: ChatMessage[] = [
+    {
+      role: "system",
+      content:
+        "你是中文考试练习题生成器。你需要根据用户上传的题目图片，直接生成新的同类型练习题。只能输出合法 JSON 对象，不要输出 Markdown、代码块或额外说明。"
+    },
     {
       role: "user",
       content: [
         {
           type: "text",
-          text: `请详细识别这张学习题目图片，并只做“生成同类型新题”所需的分析。
-
-请用中文输出，重点提取：
-1. 学科
-2. 题型
-3. 核心知识点
-4. 解题方法或关键公式
-5. 原题结构
-6. 变量、数字、图形条件、表格条件、函数图或几何图信息
-7. 容易出错的点
-
-如果包含数学内容，请尽量使用 LaTeX 表达公式，例如 $x^2+2x+1$ 或 $$S=\\frac{1}{2}ah$$。
-不要遗漏图形、表格、函数图、几何图、物理图中的关键信息。`
-        },
-        {
-          type: "image_url",
-          image_url: {
-            url: `data:${mimeType};base64,${base64}`
-          }
-        }
-      ]
-    }
-  ];
-
-  const data = await postChatCompletion({
-    body: {
-      model: QWEN_MODEL,
-      messages,
-      temperature: 0.15
-    }
-  });
-
-  return readAssistantText(data);
-}
-
-export async function analyzePdfTextWithDeepSeek(text: string) {
-  const messages: ChatMessage[] = [
-    {
-      role: "system",
-      content:
-        "你是中文学习材料分析助手。你只分析文档结构、知识点和可出题方向，不要生成题目。"
-    },
-    {
-      role: "user",
-      content: `请分析下面 PDF 文档内容，用于后续生成同类型练习题和章节 Quiz。
-
-请输出中文分析，包含：
-1. 学科
-2. 章节或主题
-3. 核心知识点列表
-4. 常见题型
-5. 关键公式或方法，数学公式请使用 LaTeX
-6. 适合生成的 Quiz 方向
-
-PDF 文本内容：
-${text.slice(0, 18000)}`
-    }
-  ];
-
-  const data = await postChatCompletion({
-    body: {
-      model: QWEN_MODEL,
-      messages,
-      temperature: 0.2
-    }
-  });
-
-  return readAssistantText(data);
-}
-
-export async function generateQuizFromAnalysis(
-  analysisText: string,
-  options: {
-    sourceType?: Quiz["sourceType"];
-    questionCount?: number;
-  } = {}
-): Promise<Quiz> {
-  const questionCount = options.questionCount ?? 3;
-  const sourceType = options.sourceType ?? "image";
-
-  const messages: ChatMessage[] = [
-    {
-      role: "system",
-      content:
-        "你是中文考试练习题生成器。你不是在解析原题给用户看，而是根据原题的题型、考点、解法生成新的同类型练习题。只能输出合法 JSON 对象，不要输出 Markdown、代码块或额外说明。"
-    },
-    {
-      role: "user",
-      content: `请根据下面的材料分析生成 ${questionCount} 道“同类型新题”。
+          text: `请识别图片中的原题，并直接生成 ${questionCount} 道“同类型新题”。
 
 核心要求：
 1. 不要复述原题，不要拆解原题，不要把原题改写成解析题。
@@ -314,10 +229,11 @@ export async function generateQuizFromAnalysis(
 3. 新题与原题考点相同，解法相同或相近。
 4. 必须更换数字、条件、题干表达和答案。
 5. 不要照抄原题中的完整句子、数字组合或选项。
-6. 如果是数学题，题干、选项和解析中的公式尽量使用 LaTeX，例如 $x^2-4x+3=0$、$\\frac{1}{2}$、$$A=\\pi r^2$$。
-7. 每题必须有 4 个选项，answerIndex 必须是 0、1、2、3。
-8. difficulty 只能是 easy / medium / hard。
-9. 默认生成 3 道题，不要多于 3 道。
+6. 如果有图形、表格、函数图、几何图、物理图，请根据图中关键信息生成同类型新题。
+7. 如果是数学题，题干、选项和解析中的公式尽量使用 LaTeX，例如 $x^2-4x+3=0$、$\\frac{1}{2}$、$$A=\\pi r^2$$。
+8. 每题必须有 4 个选项，answerIndex 必须是 0、1、2、3。
+9. difficulty 只能是 easy / medium / hard。
+10. 默认生成 3 道题，不要多于 3 道。
 
 必须输出严格 JSON：
 {
@@ -335,24 +251,123 @@ export async function generateQuizFromAnalysis(
       "difficulty": "medium"
     }
   ]
-}
-
-材料分析：
-${analysisText}`
+}`
+        },
+        {
+          type: "image_url",
+          image_url: {
+            url: `data:${mimeType};base64,${base64}`
+          }
+        }
+      ]
     }
   ];
 
-  const data = await postChatCompletion({
-    body: {
-      model: QWEN_MODEL,
-      messages,
-      temperature: 0.45,
-      response_format: { type: "json_object" }
-    }
+  const data = await postQwenChatCompletion({
+    model: QWEN_MODEL,
+    messages,
+    temperature: 0.35,
+    response_format: { type: "json_object" }
   });
 
   const raw = readAssistantText(data);
-  return normalizeQuiz(parseJsonObject<Quiz>(raw), sourceType);
+  return normalizeQuiz(parseJsonObject<Quiz>(raw), "image");
+}
+
+export async function generateQuizFromPdfTextWithQwen({
+  text,
+  questionCount = 3
+}: {
+  text: string;
+  questionCount?: number;
+}): Promise<Quiz> {
+  const messages: ChatMessage[] = [
+    {
+      role: "system",
+      content:
+        "你是中文考试练习题生成器。你需要根据用户上传的 PDF 文本内容，直接生成新的同类型练习题。只能输出合法 JSON 对象，不要输出 Markdown、代码块或额外说明。"
+    },
+    {
+      role: "user",
+      content: `请根据下面 PDF 内容直接生成 ${questionCount} 道“同类型新题”。
+
+核心要求：
+1. 不要复述原文，不要拆解原文。
+2. 新题必须像真实考试/练习题。
+3. 新题要围绕 PDF 中的核心知识点。
+4. 如果是数学、物理、化学内容，公式尽量使用 LaTeX。
+5. 每题必须有 4 个选项，answerIndex 必须是 0、1、2、3。
+6. difficulty 只能是 easy / medium / hard。
+7. 默认生成 3 道题，不要多于 3 道。
+
+必须输出严格 JSON：
+{
+  "title": "同类型练习标题",
+  "summary": "简要说明这组题训练的考点",
+  "subject": "学科",
+  "questionType": "题型",
+  "questions": [
+    {
+      "question": "新题题干",
+      "options": ["选项A", "选项B", "选项C", "选项D"],
+      "answerIndex": 0,
+      "explanation": "清晰解析",
+      "knowledgePoint": "知识点",
+      "difficulty": "medium"
+    }
+  ]
+}
+
+PDF 文本内容：
+${text.slice(0, 12000)}`
+    }
+  ];
+
+  const data = await postQwenChatCompletion({
+    model: QWEN_MODEL,
+    messages,
+    temperature: 0.35,
+    response_format: { type: "json_object" }
+  });
+
+  const raw = readAssistantText(data);
+  return normalizeQuiz(parseJsonObject<Quiz>(raw), "pdf");
+}
+
+export async function analyzeImageWithQwen({
+  base64,
+  mimeType
+}: {
+  base64: string;
+  mimeType: string;
+}) {
+  const quiz = await generateQuizFromImageWithQwen({
+    base64,
+    mimeType,
+    questionCount: 3
+  });
+
+  return JSON.stringify(quiz);
+}
+
+export async function analyzePdfTextWithDeepSeek(text: string) {
+  const quiz = await generateQuizFromPdfTextWithQwen({
+    text,
+    questionCount: 3
+  });
+
+  return JSON.stringify(quiz);
+}
+
+export async function generateQuizFromAnalysis(
+  analysisText: string,
+  options: {
+    sourceType?: Quiz["sourceType"];
+    questionCount?: number;
+  } = {}
+): Promise<Quiz> {
+  const sourceType = options.sourceType ?? "image";
+  return normalizeQuiz(parseJsonObject<Quiz>(analysisText), sourceType);
 }
 
 export async function generateReviewFromMistakes({
@@ -370,7 +385,7 @@ export async function generateReviewFromMistakes({
     },
     {
       role: "user",
-      content: `请根据原始材料分析和用户错题，生成错题巩固内容。
+      content: `请根据原始材料和用户错题，生成错题巩固内容。
 
 要求：
 1. 指出薄弱点、错因和正确思路。
@@ -405,7 +420,7 @@ export async function generateReviewFromMistakes({
   ]
 }
 
-原始材料分析：
+原始材料：
 ${originalAnalysisText}
 
 用户错题：
@@ -413,13 +428,11 @@ ${JSON.stringify(wrongQuestions, null, 2)}`
     }
   ];
 
-  const data = await postChatCompletion({
-    body: {
-      model: QWEN_MODEL,
-      messages,
-      temperature: 0.3,
-      response_format: { type: "json_object" }
-    }
+  const data = await postQwenChatCompletion({
+    model: QWEN_MODEL,
+    messages,
+    temperature: 0.3,
+    response_format: { type: "json_object" }
   });
 
   const raw = readAssistantText(data);
