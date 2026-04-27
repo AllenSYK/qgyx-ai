@@ -1,3 +1,5 @@
+export const runtime = "nodejs";
+export const preferredRegion = "sin1"; // 新加坡
 import { NextResponse } from "next/server";
 import {
   AiJsonFormatError,
