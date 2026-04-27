@@ -72,15 +72,20 @@ function readAssistantText(data: { choices?: Array<{ message?: { content?: strin
 }
 
 function parseJsonObject<T>(raw: string): T {
+  const cleaned = raw
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
   try {
-    return JSON.parse(raw) as T;
+    return JSON.parse(cleaned) as T;
   } catch {
-    const jsonStart = raw.indexOf("{");
-    const jsonEnd = raw.lastIndexOf("}");
+    const jsonStart = cleaned.indexOf("{");
+    const jsonEnd = cleaned.lastIndexOf("}");
 
     if (jsonStart >= 0 && jsonEnd > jsonStart) {
       try {
-        return JSON.parse(raw.slice(jsonStart, jsonEnd + 1)) as T;
+        return JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1)) as T;
       } catch {
         throw new AiJsonFormatError();
       }
@@ -104,6 +109,7 @@ function normalizeQuestion(input: unknown): QuizQuestion {
   }
 
   const value = input as Partial<QuizQuestion>;
+
   const options = Array.isArray(value.options)
     ? value.options.map((option) => String(option)).slice(0, 4)
     : [];
@@ -267,7 +273,8 @@ export async function generateQuizFromImageWithQwen({
     model: QWEN_MODEL,
     messages,
     temperature: 0.35,
-    response_format: { type: "json_object" }
+    enable_thinking: false,
+    max_tokens: 1500
   });
 
   const raw = readAssistantText(data);
@@ -327,7 +334,8 @@ ${text.slice(0, 12000)}`
     model: QWEN_MODEL,
     messages,
     temperature: 0.35,
-    response_format: { type: "json_object" }
+    enable_thinking: false,
+    max_tokens: 1500
   });
 
   const raw = readAssistantText(data);
@@ -432,7 +440,8 @@ ${JSON.stringify(wrongQuestions, null, 2)}`
     model: QWEN_MODEL,
     messages,
     temperature: 0.3,
-    response_format: { type: "json_object" }
+    enable_thinking: false,
+    max_tokens: 1500
   });
 
   const raw = readAssistantText(data);
