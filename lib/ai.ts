@@ -115,8 +115,40 @@ function normalizeDifficulty(value: unknown): QuizQuestion["difficulty"] {
   return "medium";
 }
 
+function normalizeOptionText(input: string) {
+  let text = input.trim();
+
+  text = text.replace(/^[A-D][\s:：.、)-]+/i, "").trim();
+
+  if (/^\$[\s\S]*\$$/.test(text)) {
+    return text;
+  }
+
+  const looksMath =
+    /\\[a-zA-Z]+/.test(text) ||
+    /[_^=]/.test(text) ||
+    /\b(pi|sqrt|frac|sin|cos|tan|ln|log|sinh|cosh|tanh)\b/i.test(text) ||
+    /e\^/.test(text) ||
+    /[+\-*/()]/.test(text);
+
+  if (!looksMath) {
+    return text;
+  }
+
+  let latex = text
+    .replace(/\bpi\b/gi, "\\pi")
+    .replace(/\bsqrt\s*\(([^)]+)\)/gi, "\\sqrt{$1}")
+    .replace(/\bfrac\s*\(([^,]+),\s*([^)]+)\)/gi, "\\frac{$1}{$2}");
+
+  latex = latex.replace(/(?<!\\)\b([0-9]+)\s*\/\s*([0-9]+)\b/g, "\\frac{$1}{$2}");
+
+  return `$${latex}$`;
+}
+
 function normalizeOptions(input: unknown): string[] {
-  const options = Array.isArray(input) ? input.map((item) => String(item)) : [];
+  const options = Array.isArray(input)
+    ? input.map((item) => normalizeOptionText(String(item)))
+    : [];
 
   while (options.length < 4) {
     options.push(`选项${String.fromCharCode(65 + options.length)}`);
@@ -249,7 +281,7 @@ async function repairQuizWithQwen(raw: string, sourceType: Quiz["sourceType"]): 
   "questions": [
     {
       "question": "题目",
-      "options": ["A", "B", "C", "D"],
+      "options": ["$\\\\frac{16}{18}$", "$\\\\sqrt{2}$", "$x^2$", "$a=16, b=-8$"],
       "answerIndex": 0,
       "explanation": "解析",
       "knowledgePoint": "知识点",
@@ -263,7 +295,10 @@ async function repairQuizWithQwen(raw: string, sourceType: Quiz["sourceType"]): 
 2. 每题必须 4 个选项。
 3. answerIndex 必须是 0、1、2、3。
 4. difficulty 只能是 easy / medium / hard。
-5. 只输出 JSON。
+5. options 里不要带 A/B/C/D 前缀。
+6. 数学表达式必须用 LaTeX，并且包在 $...$ 里。
+7. 分数必须写成 "$\\\\frac{16}{18}$"，不能写 16/18。
+8. 只输出 JSON。
 
 待修复内容：
 ${raw}`
@@ -285,6 +320,18 @@ async function parseQuizWithRepair(raw: string, sourceType: Quiz["sourceType"]) 
     return repairQuizWithQwen(raw, sourceType);
   }
 }
+
+const quizFormatRules = `数学格式要求：
+1. 数学内容必须使用 LaTeX 排版，不要使用普通键盘格式。
+2. 分数必须写成 LaTeX 分式，例如不要写 16/18，要写 "$\\\\frac{16}{18}$"。
+3. 根号必须写成 "$\\\\sqrt{2}$"。
+4. 指数必须写成 "$x^2$" 或 "$e^{-2}$"。
+5. 积分必须写成 "$\\\\int_0^1 x^2\\\\,dx$"。
+6. options 数组中每个元素必须是独立字符串，不能拼接。
+7. options 不要带 A: / B: / C: / D: 前缀。
+8. 选项如果是数学表达式，必须包在 $...$ 中。
+9. 正确示例：
+"options": ["$S_2=\\\\pi(e^2-e^{-2})$", "$S_2=\\\\frac{\\\\pi}{2}(e^2-e^{-2})$", "$S_2=2\\\\pi(e-e^{-1})$", "$S_2=\\\\pi(e-e^{-1})^2$"]`;
 
 export async function generateQuizFromImageWithQwen({
   base64,
@@ -317,11 +364,12 @@ export async function generateQuizFromImageWithQwen({
 6. 必须更换数字、条件、题干表达和答案。
 7. 不要照抄原题中的完整句子、数字组合或选项。
 8. 如果有图形、表格、函数图、几何图、物理图，请根据图中关键信息生成同类型新题。
-9. 数学公式尽量使用 LaTeX，例如 $x^2-4x+3=0$、$\\frac{1}{2}$、$$A=\\pi r^2$$。
+9. 数学公式必须使用 LaTeX。
 10. 每题必须有 4 个选项。
 11. answerIndex 必须是 0、1、2、3。
 12. difficulty 只能是 easy / medium / hard。
 13. 必须生成 3 道题。
+14. ${quizFormatRules}
 
 只输出这个 JSON 结构：
 {
@@ -332,7 +380,7 @@ export async function generateQuizFromImageWithQwen({
   "questions": [
     {
       "question": "新题题干",
-      "options": ["选项A", "选项B", "选项C", "选项D"],
+      "options": ["$\\\\frac{16}{18}$", "$\\\\frac{8}{9}$", "$\\\\sqrt{2}$", "$x^2+1$"],
       "answerIndex": 0,
       "explanation": "清晰解析",
       "knowledgePoint": "知识点",
@@ -385,11 +433,12 @@ export async function generateQuizFromPdfTextWithQwen({
 2. 不要拆解原文。
 3. 新题必须像真实考试/练习题。
 4. 新题要围绕 PDF 中的核心知识点。
-5. 公式尽量使用 LaTeX。
+5. 公式必须使用 LaTeX。
 6. 每题必须有 4 个选项。
 7. answerIndex 必须是 0、1、2、3。
 8. difficulty 只能是 easy / medium / hard。
 9. 必须生成 3 道题。
+10. ${quizFormatRules}
 
 只输出这个 JSON 结构：
 {
@@ -400,7 +449,7 @@ export async function generateQuizFromPdfTextWithQwen({
   "questions": [
     {
       "question": "新题题干",
-      "options": ["选项A", "选项B", "选项C", "选项D"],
+      "options": ["$\\\\frac{16}{18}$", "$\\\\frac{8}{9}$", "$\\\\sqrt{2}$", "$x^2+1$"],
       "answerIndex": 0,
       "explanation": "清晰解析",
       "knowledgePoint": "知识点",
@@ -482,8 +531,10 @@ export async function generateReviewFromMistakes({
 要求：
 1. 指出薄弱点、错因和正确思路。
 2. 生成 3 道新的相似练习题，不能复述原错题。
-3. 数学内容尽量使用 LaTeX。
+3. 数学内容必须使用 LaTeX。
 4. practiceQuestions 中每题必须包含 question、options、answerIndex、explanation、knowledgePoint、difficulty。
+5. practiceQuestions 的 options 也必须遵守：
+${quizFormatRules}
 
 必须输出严格 JSON：
 {
@@ -503,7 +554,7 @@ export async function generateReviewFromMistakes({
   "practiceQuestions": [
     {
       "question": "相似练习题",
-      "options": ["选项A", "选项B", "选项C", "选项D"],
+      "options": ["$\\\\frac{16}{18}$", "$\\\\frac{8}{9}$", "$\\\\sqrt{2}$", "$x^2+1$"],
       "answerIndex": 0,
       "explanation": "解析",
       "knowledgePoint": "知识点",
