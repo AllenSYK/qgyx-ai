@@ -2,8 +2,10 @@ import "server-only";
 
 import type { Quiz, QuizQuestion, ReviewResult, WrongQuestion } from "@/types/quiz";
 
-const QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
-const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+const QWEN_BASE_URL =
+  process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1";
+
+const QWEN_MODEL = process.env.QWEN_MODEL || "qwen3.6-plus";
 
 type TextContent = {
   type: "text";
@@ -30,15 +32,17 @@ export class AiJsonFormatError extends Error {
 }
 
 async function postChatCompletion({
-  baseUrl,
-  apiKey,
   body
 }: {
-  baseUrl: string;
-  apiKey: string;
   body: Record<string, unknown>;
 }) {
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const apiKey = process.env.DASHSCOPE_API_KEY;
+
+  if (!apiKey) {
+    throw new Error("DASHSCOPE_API_KEY 未配置。");
+  }
+
+  const response = await fetch(`${QWEN_BASE_URL}/chat/completions`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
@@ -49,7 +53,7 @@ async function postChatCompletion({
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(errorText || `AI 服务请求失败：${response.status}`);
+    throw new Error(errorText || `千问服务请求失败：${response.status}`);
   }
 
   return response.json() as Promise<{
@@ -178,6 +182,7 @@ function normalizeReview(input: unknown): ReviewResult {
     weaknessSummary: value.weaknessSummary,
     mistakeAnalysis: value.mistakeAnalysis.map((item) => {
       const mistake = item as Partial<ReviewResult["mistakeAnalysis"][number]>;
+
       if (
         !mistake ||
         typeof mistake.question !== "string" ||
@@ -207,12 +212,6 @@ export async function analyzeImageWithQwen({
   base64: string;
   mimeType: string;
 }) {
-  const apiKey = process.env.DASHSCOPE_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("DASHSCOPE_API_KEY 未配置。");
-  }
-
   const messages: ChatMessage[] = [
     {
       role: "user",
@@ -244,10 +243,8 @@ export async function analyzeImageWithQwen({
   ];
 
   const data = await postChatCompletion({
-    baseUrl: QWEN_BASE_URL,
-    apiKey,
     body: {
-      model: "qwen3-vl-plus",
+      model: QWEN_MODEL,
       messages,
       temperature: 0.15
     }
@@ -257,12 +254,6 @@ export async function analyzeImageWithQwen({
 }
 
 export async function analyzePdfTextWithDeepSeek(text: string) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY 未配置。");
-  }
-
   const messages: ChatMessage[] = [
     {
       role: "system",
@@ -287,10 +278,8 @@ ${text.slice(0, 18000)}`
   ];
 
   const data = await postChatCompletion({
-    baseUrl: DEEPSEEK_BASE_URL,
-    apiKey,
     body: {
-      model: "deepseek-v4-flash",
+      model: QWEN_MODEL,
       messages,
       temperature: 0.2
     }
@@ -306,12 +295,6 @@ export async function generateQuizFromAnalysis(
     questionCount?: number;
   } = {}
 ): Promise<Quiz> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY 未配置。");
-  }
-
   const questionCount = options.questionCount ?? 3;
   const sourceType = options.sourceType ?? "image";
 
@@ -360,10 +343,8 @@ ${analysisText}`
   ];
 
   const data = await postChatCompletion({
-    baseUrl: DEEPSEEK_BASE_URL,
-    apiKey,
     body: {
-      model: "deepseek-v4-flash",
+      model: QWEN_MODEL,
       messages,
       temperature: 0.45,
       response_format: { type: "json_object" }
@@ -381,12 +362,6 @@ export async function generateReviewFromMistakes({
   originalAnalysisText: string;
   wrongQuestions: WrongQuestion[];
 }): Promise<ReviewResult> {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-
-  if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY 未配置。");
-  }
-
   const messages: ChatMessage[] = [
     {
       role: "system",
@@ -439,10 +414,8 @@ ${JSON.stringify(wrongQuestions, null, 2)}`
   ];
 
   const data = await postChatCompletion({
-    baseUrl: DEEPSEEK_BASE_URL,
-    apiKey,
     body: {
-      model: "deepseek-v4-flash",
+      model: QWEN_MODEL,
       messages,
       temperature: 0.3,
       response_format: { type: "json_object" }
