@@ -1,13 +1,12 @@
 export const runtime = "nodejs";
-export const preferredRegion = "sin1"; // 新加坡
-export const maxDuration = 60;
+export const preferredRegion = "sin1";
+export const maxDuration = 300;
 
 import { NextResponse } from "next/server";
 import {
   AiJsonFormatError,
-  analyzeImageWithQwen,
-  analyzePdfTextWithDeepSeek,
-  generateQuizFromAnalysis
+  generateQuizFromImageWithQwen,
+  generateQuizFromPdfTextWithQwen
 } from "@/lib/ai";
 import { ensureUserCredits, getCurrentUser } from "@/lib/auth";
 import { extractPdfText } from "@/lib/pdf";
@@ -59,43 +58,46 @@ export async function POST(request: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    let analysisText = "";
     const sourceType: Quiz["sourceType"] = isPdf ? "pdf" : "image";
 
-    if (isPdf) {
-      const pdfText = await extractPdfText(buffer);
-
-      if (pdfText.replace(/\s/g, "").length < 80) {
-        return errorResponse(
-          "这个 PDF 可能是扫描版或图片型文档，当前版本暂时无法稳定提取文字。请截图题目后上传图片，或换成文本型 PDF。",
-          422
-        );
-      }
-
-      analysisText = await analyzePdfTextWithDeepSeek(pdfText);
-    } else {
-      const base64 = buffer.toString("base64");
-      analysisText = await analyzeImageWithQwen({
-        base64,
-        mimeType: file.type || "image/png"
-      });
-    }
-
-    let quiz;
+    let quiz: Quiz;
 
     try {
-      quiz = await generateQuizFromAnalysis(analysisText, {
-        sourceType,
-        questionCount: 3
-      });
+      if (isPdf) {
+        const pdfText = await extractPdfText(buffer);
+
+        if (pdfText.replace(/\s/g, "").length < 80) {
+          return errorResponse(
+            "这个 PDF 可能是扫描版或图片型文档，当前版本暂时无法稳定提取文字。请截图题目后上传图片，或换成文本型 PDF。",
+            422
+          );
+        }
+
+        quiz = await generateQuizFromPdfTextWithQwen({
+          text: pdfText,
+          questionCount: 3
+        });
+      } else {
+        const base64 = buffer.toString("base64");
+
+        quiz = await generateQuizFromImageWithQwen({
+          base64,
+          mimeType: file.type || "image/png",
+          questionCount: 3
+        });
+      }
     } catch (error) {
       if (error instanceof AiJsonFormatError) {
         return errorResponse("AI 返回格式暂时不稳定，请重新上传或稍后再试。", 502);
       }
+
       throw error;
     }
 
+    const analysisText = "已使用千问模型直接根据上传内容生成同类型练习题。";
+
     const admin = createSupabaseAdminClient();
+
     const { data: session, error: sessionError } = await admin
       .from("quiz_sessions")
       .insert({
@@ -167,7 +169,6 @@ export async function POST(request: Request) {
       analysisText,
       quiz
     });
-
   } catch (error) {
     const message = error instanceof Error ? error.message : "生成 Quiz 失败，请稍后再试。";
     return errorResponse(message || "生成 Quiz 失败，请稍后再试。", 500);
