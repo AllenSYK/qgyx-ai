@@ -271,7 +271,7 @@ ${raw}`
     ],
     temperature: 0.1,
     enable_thinking: false,
-    max_tokens: 1800
+    max_tokens: 3000
   });
 
   const repaired = readAssistantText(data);
@@ -356,7 +356,7 @@ export async function generateQuizFromImageWithQwen({
     messages,
     temperature: 0.25,
     enable_thinking: false,
-    max_tokens: 1800
+    max_tokens: 3000
   });
 
   const raw = readAssistantText(data);
@@ -419,7 +419,7 @@ ${text.slice(0, 10000)}`
     messages,
     temperature: 0.25,
     enable_thinking: false,
-    max_tokens: 1800
+    max_tokens: 3000
   });
 
   const raw = readAssistantText(data);
@@ -525,7 +525,7 @@ ${JSON.stringify(wrongQuestions, null, 2)}`
     messages,
     temperature: 0.25,
     enable_thinking: false,
-    max_tokens: 1800
+    max_tokens: 3000
   });
 
   const raw = readAssistantText(data);
