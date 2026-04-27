@@ -1,5 +1,7 @@
 export const runtime = "nodejs";
 export const preferredRegion = "sin1"; // 新加坡
+export const maxDuration = 60;
+
 import { NextResponse } from "next/server";
 import {
   AiJsonFormatError,
@@ -11,9 +13,6 @@ import { ensureUserCredits, getCurrentUser } from "@/lib/auth";
 import { extractPdfText } from "@/lib/pdf";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Quiz } from "@/types/quiz";
-
-export const runtime = "nodejs";
-export const maxDuration = 60;
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_PDF_SIZE = 10 * 1024 * 1024;
@@ -93,7 +92,6 @@ export async function POST(request: Request) {
       if (error instanceof AiJsonFormatError) {
         return errorResponse("AI 返回格式暂时不稳定，请重新上传或稍后再试。", 502);
       }
-
       throw error;
     }
 
@@ -120,6 +118,7 @@ export async function POST(request: Request) {
           question_count: quiz.questions.length
         })
         .eq("id", session.id),
+
       admin.from("uploaded_files").insert({
         user_id: user.id,
         session_id: session.id,
@@ -129,6 +128,7 @@ export async function POST(request: Request) {
         source_kind: sourceType,
         status: "processed"
       }),
+
       admin.from("quiz_questions").insert(
         quiz.questions.map((question, index) => ({
           session_id: session.id,
@@ -146,6 +146,7 @@ export async function POST(request: Request) {
 
     const nextRemaining = credits.remaining - 1;
     const now = new Date().toISOString();
+
     const { data: updatedCredits, error: creditError } = await admin
       .from("user_credits")
       .update({
@@ -166,6 +167,7 @@ export async function POST(request: Request) {
       analysisText,
       quiz
     });
+
   } catch (error) {
     const message = error instanceof Error ? error.message : "生成 Quiz 失败，请稍后再试。";
     return errorResponse(message || "生成 Quiz 失败，请稍后再试。", 500);
