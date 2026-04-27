@@ -1,7 +1,20 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, BrainCircuit, CheckCircle2, ImageUp, LayoutDashboard, LogOut, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpenCheck,
+  BrainCircuit,
+  CheckCircle2,
+  FileText,
+  ImageUp,
+  LayoutDashboard,
+  LineChart,
+  LogOut,
+  ShieldCheck,
+  Sparkles
+} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import MobileBottomNav from "@/components/MobileBottomNav";
 import UploadCard from "@/components/UploadCard";
 import { ensureProfile, ensureUserCredits, getCurrentUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -79,7 +92,24 @@ export default async function HomePage() {
           </nav>
         </header>
 
+        <section className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { href: "/", title: "拍题生成", description: "图片生成同类型题", Icon: ImageUp },
+            { href: "/", title: "PDF 生成", description: "文档总结与章节 Quiz", Icon: FileText },
+            { href: "/wrongbook", title: "错题本", description: "按知识点重新练习", Icon: BookOpenCheck },
+            { href: "/report", title: "学习报告", description: "趋势与提升建议", Icon: LineChart }
+          ].map(({ href, title, description, Icon }) => (
+            <Link key={title} href={href} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-card">
+              <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+                <Icon className="h-5 w-5" />
+              </span>
+              <span className="block font-semibold text-slate-950">{title}</span>
+              <span className="mt-1 block text-sm leading-6 text-slate-500">{description}</span>
+            </Link>
+          ))}
+        </section>
         <UploadCard initialRemainingCredits={credits.remaining} userEmail={user.email} />
+        <MobileBottomNav />
       </main>
     );
   }
@@ -93,10 +123,10 @@ export default async function HomePage() {
             qgyx.asia
           </div>
           <h1 className="max-w-3xl text-4xl font-semibold tracking-normal text-slate-950 sm:text-5xl lg:text-6xl">
-            AI 图片分析 Quiz
+            AI 同类型练习
           </h1>
           <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-600">
-            上传学习题目图片，由千问 VL 识别文字、图形、表格和知识点，再由 DeepSeek 生成中文交互测验与错题巩固。
+            上传学习题目图片或文本型 PDF，AI 识别题型、考点和解法，再生成数据与条件不同的同类型新题。
           </p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight, Coins, FileQuestion, LogOut, Mail, ShieldCheck, Sparkles, WalletCards } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import MobileBottomNav from "@/components/MobileBottomNav";
 import { ensureProfile, ensureUserCredits, getCurrentUser } from "@/lib/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -59,7 +60,7 @@ export default async function DashboardPage() {
   ];
 
   return (
-    <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+    <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6 pb-24 sm:px-6 lg:px-8">
       <header className="mb-6 flex flex-col gap-4 rounded-[28px] border border-slate-200 bg-white/85 p-4 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <Link href="/" className="flex items-center gap-3">
           <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-blue-600 text-white">
@@ -129,6 +130,7 @@ export default async function DashboardPage() {
           </div>
         ) : null}
       </section>
+      <MobileBottomNav />
     </main>
   );
 }

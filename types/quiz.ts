@@ -3,16 +3,31 @@ export type QuizQuestion = {
   options: string[];
   answerIndex: number;
   explanation: string;
+  knowledgePoint: string;
+  difficulty: "easy" | "medium" | "hard";
 };
 
 export type Quiz = {
   title: string;
   summary: string;
+  subject?: string;
+  questionType?: string;
+  sourceType?: "image" | "pdf";
   questions: QuizQuestion[];
 };
 
 export type WrongQuestion = QuizQuestion & {
   userAnswerIndex: number;
+  sessionId?: string;
+};
+
+export type StudyRecordPayload = {
+  sessionId?: string;
+  quizTitle: string;
+  questionCount: number;
+  correctCount: number;
+  knowledgePoints: string[];
+  wrongQuestions: WrongQuestion[];
 };
 
 export type MistakeAnalysisItem = {

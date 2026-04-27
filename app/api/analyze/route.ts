@@ -1,12 +1,20 @@
 import { NextResponse } from "next/server";
-import { AiJsonFormatError, analyzeImageWithQwen, generateQuizFromAnalysis } from "@/lib/ai";
+import {
+  AiJsonFormatError,
+  analyzeImageWithQwen,
+  analyzePdfTextWithDeepSeek,
+  generateQuizFromAnalysis
+} from "@/lib/ai";
 import { ensureUserCredits, getCurrentUser } from "@/lib/auth";
+import { extractPdfText } from "@/lib/pdf";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import type { Quiz } from "@/types/quiz";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
+const MAX_PDF_SIZE = 10 * 1024 * 1024;
 
 function errorResponse(message: string, status = 400) {
   return NextResponse.json({ error: message }, { status });
@@ -21,20 +29,26 @@ export async function POST(request: Request) {
     }
 
     const formData = await request.formData();
-    const upload = formData.get("image");
+    const upload = formData.get("file") || formData.get("image");
 
     if (!upload || typeof upload === "string") {
-      return errorResponse("请上传一张题目图片。");
+      return errorResponse("请上传题目图片或 PDF 文档。");
     }
 
-    const image = upload as File;
+    const file = upload as File;
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    const isImage = file.type.startsWith("image/");
 
-    if (!image.type.startsWith("image/")) {
-      return errorResponse("请上传有效的图片文件。");
+    if (!isImage && !isPdf) {
+      return errorResponse("当前支持 jpg、png、webp 和 pdf 文件。");
     }
 
-    if (image.size > MAX_IMAGE_SIZE) {
+    if (isImage && file.size > MAX_IMAGE_SIZE) {
       return errorResponse("图片不能超过 5MB。");
+    }
+
+    if (isPdf && file.size > MAX_PDF_SIZE) {
+      return errorResponse("PDF 不能超过 10MB。");
     }
 
     const credits = await ensureUserCredits(user, supabase);
@@ -43,17 +57,36 @@ export async function POST(request: Request) {
       return errorResponse("次数不足，请联系管理员充值。", 402);
     }
 
-    const buffer = Buffer.from(await image.arrayBuffer());
-    const base64 = buffer.toString("base64");
-    const analysisText = await analyzeImageWithQwen({
-      base64,
-      mimeType: image.type || "image/png"
-    });
+    const buffer = Buffer.from(await file.arrayBuffer());
+    let analysisText = "";
+    const sourceType: Quiz["sourceType"] = isPdf ? "pdf" : "image";
+
+    if (isPdf) {
+      const pdfText = await extractPdfText(buffer);
+
+      if (pdfText.replace(/\s/g, "").length < 80) {
+        return errorResponse(
+          "这个 PDF 可能是扫描版或图片型文档，当前版本暂时无法稳定提取文字。请截图题目后上传图片，或换成文本型 PDF。",
+          422
+        );
+      }
+
+      analysisText = await analyzePdfTextWithDeepSeek(pdfText);
+    } else {
+      const base64 = buffer.toString("base64");
+      analysisText = await analyzeImageWithQwen({
+        base64,
+        mimeType: file.type || "image/png"
+      });
+    }
 
     let quiz;
 
     try {
-      quiz = await generateQuizFromAnalysis(analysisText);
+      quiz = await generateQuizFromAnalysis(analysisText, {
+        sourceType,
+        questionCount: 3
+      });
     } catch (error) {
       if (error instanceof AiJsonFormatError) {
         return errorResponse("AI 返回格式暂时不稳定，请重新上传或稍后再试。", 502);
@@ -63,6 +96,52 @@ export async function POST(request: Request) {
     }
 
     const admin = createSupabaseAdminClient();
+    const { data: session, error: sessionError } = await admin
+      .from("quiz_sessions")
+      .insert({
+        user_id: user.id,
+        image_analysis: analysisText,
+        quiz
+      })
+      .select("id")
+      .single();
+
+    if (sessionError) {
+      throw new Error(sessionError.message);
+    }
+
+    await Promise.allSettled([
+      admin
+        .from("quiz_sessions")
+        .update({
+          source_type: sourceType,
+          question_count: quiz.questions.length
+        })
+        .eq("id", session.id),
+      admin.from("uploaded_files").insert({
+        user_id: user.id,
+        session_id: session.id,
+        file_name: file.name,
+        file_type: file.type || (isPdf ? "application/pdf" : "image/*"),
+        file_size: file.size,
+        source_kind: sourceType,
+        status: "processed"
+      }),
+      admin.from("quiz_questions").insert(
+        quiz.questions.map((question, index) => ({
+          session_id: session.id,
+          user_id: user.id,
+          question_order: index + 1,
+          question: question.question,
+          options: question.options,
+          answer_index: question.answerIndex,
+          explanation: question.explanation,
+          knowledge_point: question.knowledgePoint,
+          difficulty: question.difficulty
+        }))
+      )
+    ]);
+
     const nextRemaining = credits.remaining - 1;
     const now = new Date().toISOString();
     const { data: updatedCredits, error: creditError } = await admin
@@ -79,17 +158,8 @@ export async function POST(request: Request) {
       throw new Error(creditError.message);
     }
 
-    const { error: sessionError } = await admin.from("quiz_sessions").insert({
-      user_id: user.id,
-      image_analysis: analysisText,
-      quiz
-    });
-
-    if (sessionError) {
-      throw new Error(sessionError.message);
-    }
-
     return NextResponse.json({
+      sessionId: session.id as string,
       remainingCredits: updatedCredits.remaining as number,
       analysisText,
       quiz

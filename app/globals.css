@@ -42,3 +42,14 @@ textarea {
   background: #bfdbfe;
   color: #0f172a;
 }
+
+.math-text .katex {
+  font-size: 1.03em;
+}
+
+.math-text .katex-display {
+  margin: 0.25rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.25rem 0;
+}

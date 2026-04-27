@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Brain, Loader2, NotebookPen, RefreshCw } from "lucide-react";
+import MathText from "@/components/MathText";
 import QuizCard from "@/components/QuizCard";
 import type { ReviewResult, WrongQuestion } from "@/types/quiz";
 
@@ -95,25 +96,25 @@ export default function ReviewCard({ originalAnalysisText, wrongQuestions }: Rev
         <div className="mt-6 space-y-5">
           <div className="rounded-3xl border border-amber-100 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
             <span className="font-semibold">薄弱点总结：</span>
-            {review.weaknessSummary}
+            <MathText text={review.weaknessSummary} className="ml-1" />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
             {review.mistakeAnalysis.map((item, index) => (
               <article key={`${item.question}-${index}`} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                <h3 className="mb-3 font-semibold leading-7 text-slate-950">{item.question}</h3>
+                <MathText as="h3" text={item.question} className="mb-3 font-semibold leading-7 text-slate-950" />
                 <div className="space-y-2 text-sm leading-6 text-slate-700">
                   <p>
                     <span className="font-semibold text-rose-700">错因：</span>
-                    {item.userMistake}
+                    <MathText text={item.userMistake} className="ml-1" />
                   </p>
                   <p>
                     <span className="font-semibold text-blue-700">思路：</span>
-                    {item.correctThinking}
+                    <MathText text={item.correctThinking} className="ml-1" />
                   </p>
                   <p>
                     <span className="font-semibold text-emerald-700">知识点：</span>
-                    {item.keyPoint}
+                    <MathText text={item.keyPoint} className="ml-1" />
                   </p>
                 </div>
               </article>
@@ -128,7 +129,7 @@ export default function ReviewCard({ originalAnalysisText, wrongQuestions }: Rev
             <ul className="space-y-2 text-sm leading-6 text-slate-700">
               {review.reviewNotes.map((note, index) => (
                 <li key={`${note}-${index}`} className="rounded-2xl bg-slate-50 px-4 py-3">
-                  {note}
+                  <MathText text={note} />
                 </li>
               ))}
             </ul>
