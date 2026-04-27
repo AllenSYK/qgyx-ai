@@ -110,7 +110,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
     setStep("otp");
     setCountdown(60);
-    setNotice("验证码已发送到你的邮箱，请输入验证码完成注册。");
+    setNotice("验证码已发送到你的邮箱，请输入 8 位验证码完成注册。");
   }
 
   async function verifyCode(event: FormEvent<HTMLFormElement>) {
@@ -118,8 +118,8 @@ export default function AuthForm({ mode }: AuthFormProps) {
     setError("");
     setNotice("");
 
-    if (otp.length !== 6) {
-      setError("请输入 6 位邮箱验证码。");
+    if (otp.length !== 8) {
+      setError("请输入 8 位邮箱验证码。");
       return;
     }
 
@@ -182,7 +182,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
           </div>
           <h1 className="text-2xl font-semibold text-slate-950">验证邮箱</h1>
           <p className="mt-2 text-sm leading-6 text-slate-600">
-            验证码已发送到 <span className="font-semibold text-slate-950">{email}</span>，请输入 6 位验证码完成注册。
+            验证码已发送到 <span className="font-semibold text-slate-950">{email}</span>，请输入 8 位验证码完成注册。
           </p>
         </div>
 
@@ -193,11 +193,11 @@ export default function AuthForm({ mode }: AuthFormProps) {
             <input
               required
               inputMode="numeric"
-              maxLength={6}
+              maxLength={8}
               value={otp}
-              onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 6))}
-              className="w-full bg-transparent text-center text-xl font-semibold tracking-[0.55em] text-slate-950 outline-none placeholder:text-slate-300"
-              placeholder="000000"
+              onChange={(event) => setOtp(event.target.value.replace(/\D/g, "").slice(0, 8))}
+              className="w-full bg-transparent text-center text-xl font-semibold tracking-[0.42em] text-slate-950 outline-none placeholder:text-slate-300"
+              placeholder="00000000"
             />
           </span>
         </label>
