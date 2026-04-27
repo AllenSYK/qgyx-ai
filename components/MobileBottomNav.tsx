@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { BookOpenCheck, ClipboardList, Home, LineChart, UserCircle } from "lucide-react";
 
@@ -14,20 +14,26 @@ const items = [
 
 export default function MobileBottomNav() {
   const router = useRouter();
+  const pathname = usePathname();
   const [navLoading, setNavLoading] = useState(false);
 
   function go(path: string) {
-    setNavLoading(true);
+    if (pathname === path) {
+      return;
+    }
 
-    setTimeout(() => {
-  router.push(path);
-}, 50);
+    setNavLoading(true);
+    router.push(path);
+
+    window.setTimeout(() => {
+      setNavLoading(false);
+    }, 1200);
   }
 
   return (
     <>
       {navLoading ? (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-white/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-white/50 backdrop-blur-sm">
           <div className="rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-xl">
             <div className="flex items-center gap-3 text-sm font-semibold text-slate-800">
               <span className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
@@ -39,18 +45,24 @@ export default function MobileBottomNav() {
 
       <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur md:hidden">
         <div className="mx-auto grid max-w-md grid-cols-5">
-          {items.map(({ href, label, Icon }) => (
-            <button
-              key={href}
-              type="button"
-              onClick={() => go(href)}
-              disabled={navLoading}
-              className="flex flex-col items-center gap-1 rounded-2xl px-2 py-2 text-xs font-medium text-slate-500 transition active:bg-slate-100 disabled:opacity-60"
-            >
-              <Icon className="h-5 w-5" />
-              {label}
-            </button>
-          ))}
+          {items.map(({ href, label, Icon }) => {
+            const active = pathname === href;
+
+            return (
+              <button
+                key={href}
+                type="button"
+                onClick={() => go(href)}
+                disabled={navLoading}
+                className={`flex flex-col items-center gap-1 rounded-2xl px-2 py-2 text-xs font-medium transition active:scale-95 disabled:opacity-60 ${
+                  active ? "bg-blue-50 text-blue-700" : "text-slate-500 active:bg-slate-100"
+                }`}
+              >
+                <Icon className="h-5 w-5" />
+                {label}
+              </button>
+            );
+          })}
         </div>
       </nav>
     </>
