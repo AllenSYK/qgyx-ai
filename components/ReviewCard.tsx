@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Brain, Loader2, NotebookPen, RefreshCw } from "lucide-react";
 import MathText from "@/components/MathText";
 import QuizCard from "@/components/QuizCard";
-import type { ReviewResult, WrongQuestion } from "@/types/quiz";
+import type { Quiz, ReviewResult, WrongQuestion } from "@/types/quiz";
 
 type ReviewCardProps = {
   originalAnalysisText: string;
@@ -21,12 +21,13 @@ export default function ReviewCard({ originalAnalysisText, wrongQuestions }: Rev
     setError("");
   }, [wrongQuestions]);
 
-  const practiceQuiz = useMemo(
+  const practiceQuiz = useMemo<Quiz | null>(
     () =>
       review
         ? {
             title: "相似练习",
             summary: "围绕本次错题的薄弱点继续练习。",
+            sourceType: "image",
             questions: review.practiceQuestions
           }
         : null,
@@ -37,25 +38,31 @@ export default function ReviewCard({ originalAnalysisText, wrongQuestions }: Rev
     setLoading(true);
     setError("");
 
-    const response = await fetch("/api/review", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        originalAnalysisText,
-        wrongQuestions
-      })
-    });
-    const data = await response.json().catch(() => null);
-    setLoading(false);
+    try {
+      const response = await fetch("/api/review", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          originalAnalysisText,
+          wrongQuestions
+        })
+      });
 
-    if (!response.ok) {
-      setError(data?.error || "生成错题巩固失败，请稍后再试。");
-      return;
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setError(data?.error || "生成错题巩固失败，请稍后再试。");
+        return;
+      }
+
+      setReview(data as ReviewResult);
+    } catch {
+      setError("网络或服务器异常，请稍后再试。");
+    } finally {
+      setLoading(false);
     }
-
-    setReview(data as ReviewResult);
   }
 
   if (wrongQuestions.length === 0) {
@@ -75,6 +82,7 @@ export default function ReviewCard({ originalAnalysisText, wrongQuestions }: Rev
             已记录 {wrongQuestions.length} 道错题，巩固分析暂时不扣次数。
           </p>
         </div>
+
         <button
           type="button"
           onClick={requestReview}
@@ -82,7 +90,7 @@ export default function ReviewCard({ originalAnalysisText, wrongQuestions }: Rev
           className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:bg-amber-300"
         >
           {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <RefreshCw className="h-5 w-5" />}
-          生成巩固内容
+          {loading ? "正在生成" : "生成巩固内容"}
         </button>
       </div>
 
