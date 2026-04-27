@@ -12,12 +12,19 @@ export type Quiz = {
   summary: string;
   subject?: string;
   questionType?: string;
-  sourceType?: "image" | "pdf";
+  sourceType: "image" | "pdf";
   questions: QuizQuestion[];
 };
 
-export type WrongQuestion = QuizQuestion & {
+export type WrongQuestion = {
+  question: string;
+  options?: string[];
+  answerIndex?: number;
   userAnswerIndex: number;
+  correctAnswerIndex?: number;
+  explanation: string;
+  knowledgePoint?: string;
+  difficulty?: "easy" | "medium" | "hard";
   sessionId?: string;
 };
 
