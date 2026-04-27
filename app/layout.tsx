@@ -1,3 +1,4 @@
+import PageTransition from "@/components/PageTransition";
 import type { Metadata } from "next";
 import "katex/dist/katex.min.css";
 import "./globals.css";
@@ -14,7 +15,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body>{children}</body>
+      <body>
+        <PageTransition>{children}</PageTransition>
+      </body>
     </html>
   );
 }
