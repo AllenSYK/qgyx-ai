@@ -5,7 +5,7 @@ import type { Quiz, QuizQuestion, ReviewResult, WrongQuestion } from "@/types/qu
 const QWEN_BASE_URL =
   process.env.DASHSCOPE_BASE_URL || "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
-const QWEN_MODEL = process.env.QWEN_MODEL || "qwen3.6-plus";
+const QWEN_MODEL = process.env.QWEN_MODEL || "qwen-vl-plus";
 
 type TextContent = {
   type: "text";
@@ -71,27 +71,39 @@ function readAssistantText(data: { choices?: Array<{ message?: { content?: strin
   return content.trim();
 }
 
-function parseJsonObject<T>(raw: string): T {
+function extractJsonText(raw: string) {
   const cleaned = raw
     .replace(/```json/gi, "")
     .replace(/```/g, "")
+    .replace(/^[\s\S]*?(?=\{)/, "")
     .trim();
 
-  try {
-    return JSON.parse(cleaned) as T;
-  } catch {
-    const jsonStart = cleaned.indexOf("{");
-    const jsonEnd = cleaned.lastIndexOf("}");
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
 
-    if (jsonStart >= 0 && jsonEnd > jsonStart) {
-      try {
-        return JSON.parse(cleaned.slice(jsonStart, jsonEnd + 1)) as T;
-      } catch {
-        throw new AiJsonFormatError();
-      }
-    }
-
+  if (start < 0 || end <= start) {
     throw new AiJsonFormatError();
+  }
+
+  return cleaned.slice(start, end + 1);
+}
+
+function parseJsonObject<T>(raw: string): T {
+  const jsonText = extractJsonText(raw);
+
+  try {
+    return JSON.parse(jsonText) as T;
+  } catch {
+    try {
+      const repaired = jsonText
+        .replace(/,\s*}/g, "}")
+        .replace(/,\s*]/g, "]")
+        .replace(/[“”]/g, '"')
+        .replace(/[‘’]/g, "'");
+      return JSON.parse(repaired) as T;
+    } catch {
+      throw new AiJsonFormatError();
+    }
   }
 }
 
@@ -103,33 +115,56 @@ function normalizeDifficulty(value: unknown): QuizQuestion["difficulty"] {
   return "medium";
 }
 
+function normalizeOptions(input: unknown): string[] {
+  const options = Array.isArray(input) ? input.map((item) => String(item)) : [];
+
+  while (options.length < 4) {
+    options.push(`选项${String.fromCharCode(65 + options.length)}`);
+  }
+
+  return options.slice(0, 4);
+}
+
+function normalizeAnswerIndex(value: unknown) {
+  if (typeof value === "number" && value >= 0 && value <= 3) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const upper = value.trim().toUpperCase();
+    if (upper === "A") return 0;
+    if (upper === "B") return 1;
+    if (upper === "C") return 2;
+    if (upper === "D") return 3;
+
+    const parsed = Number(upper);
+    if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 3) {
+      return parsed;
+    }
+  }
+
+  return 0;
+}
+
 function normalizeQuestion(input: unknown): QuizQuestion {
   if (!input || typeof input !== "object") {
     throw new AiJsonFormatError();
   }
 
   const value = input as Partial<QuizQuestion>;
-
-  const options = Array.isArray(value.options)
-    ? value.options.map((option) => String(option)).slice(0, 4)
-    : [];
-
-  if (
-    typeof value.question !== "string" ||
-    typeof value.explanation !== "string" ||
-    typeof value.answerIndex !== "number" ||
-    options.length !== 4 ||
-    value.answerIndex < 0 ||
-    value.answerIndex > 3
-  ) {
-    throw new AiJsonFormatError();
-  }
+  const question = typeof value.question === "string" && value.question.trim() ? value.question : "根据材料生成的同类型练习题";
+  const options = normalizeOptions(value.options);
+  const answerIndex = normalizeAnswerIndex(value.answerIndex);
+  const explanation =
+    typeof value.explanation === "string" && value.explanation.trim()
+      ? value.explanation
+      : "本题考查同类型知识点，请根据题干条件进行推理。";
 
   return {
-    question: value.question,
+    question,
     options,
-    answerIndex: value.answerIndex,
-    explanation: value.explanation,
+    answerIndex,
+    explanation,
     knowledgePoint:
       typeof value.knowledgePoint === "string" && value.knowledgePoint.trim()
         ? value.knowledgePoint
@@ -144,23 +179,22 @@ function normalizeQuiz(input: unknown, sourceType: Quiz["sourceType"]): Quiz {
   }
 
   const value = input as Partial<Quiz>;
+  const rawQuestions = Array.isArray(value.questions) ? value.questions : [];
 
-  if (
-    typeof value.title !== "string" ||
-    typeof value.summary !== "string" ||
-    !Array.isArray(value.questions) ||
-    value.questions.length === 0
-  ) {
+  if (rawQuestions.length === 0) {
     throw new AiJsonFormatError();
   }
 
   return {
-    title: value.title,
-    summary: value.summary,
+    title: typeof value.title === "string" && value.title.trim() ? value.title : "同类型练习",
+    summary:
+      typeof value.summary === "string" && value.summary.trim()
+        ? value.summary
+        : "这组题用于训练与原题相同或相近的核心考点。",
     subject: typeof value.subject === "string" ? value.subject : undefined,
     questionType: typeof value.questionType === "string" ? value.questionType : undefined,
     sourceType,
-    questions: value.questions.map(normalizeQuestion).slice(0, 3)
+    questions: rawQuestions.map(normalizeQuestion).slice(0, 3)
   };
 }
 
@@ -171,40 +205,85 @@ function normalizeReview(input: unknown): ReviewResult {
 
   const value = input as Partial<ReviewResult>;
 
-  if (
-    typeof value.weaknessSummary !== "string" ||
-    !Array.isArray(value.mistakeAnalysis) ||
-    !Array.isArray(value.reviewNotes) ||
-    !Array.isArray(value.practiceQuestions)
-  ) {
-    throw new AiJsonFormatError();
-  }
-
   return {
-    weaknessSummary: value.weaknessSummary,
-    mistakeAnalysis: value.mistakeAnalysis.map((item) => {
-      const mistake = item as Partial<ReviewResult["mistakeAnalysis"][number]>;
+    weaknessSummary:
+      typeof value.weaknessSummary === "string" && value.weaknessSummary.trim()
+        ? value.weaknessSummary
+        : "主要薄弱点集中在题型识别、关键条件提取和解题步骤判断。",
+    mistakeAnalysis: Array.isArray(value.mistakeAnalysis)
+      ? value.mistakeAnalysis.map((item) => {
+          const mistake = item as Partial<ReviewResult["mistakeAnalysis"][number]>;
 
-      if (
-        !mistake ||
-        typeof mistake.question !== "string" ||
-        typeof mistake.userMistake !== "string" ||
-        typeof mistake.correctThinking !== "string" ||
-        typeof mistake.keyPoint !== "string"
-      ) {
-        throw new AiJsonFormatError();
-      }
-
-      return {
-        question: mistake.question,
-        userMistake: mistake.userMistake,
-        correctThinking: mistake.correctThinking,
-        keyPoint: mistake.keyPoint
-      };
-    }),
-    reviewNotes: value.reviewNotes.map((note) => String(note)),
-    practiceQuestions: value.practiceQuestions.map(normalizeQuestion).slice(0, 3)
+          return {
+            question: typeof mistake.question === "string" ? mistake.question : "错题",
+            userMistake: typeof mistake.userMistake === "string" ? mistake.userMistake : "可能没有准确识别关键条件。",
+            correctThinking:
+              typeof mistake.correctThinking === "string" ? mistake.correctThinking : "应先提取题干条件，再套用对应方法。",
+            keyPoint: typeof mistake.keyPoint === "string" ? mistake.keyPoint : "核心知识点"
+          };
+        })
+      : [],
+    reviewNotes: Array.isArray(value.reviewNotes) ? value.reviewNotes.map((note) => String(note)) : [],
+    practiceQuestions: Array.isArray(value.practiceQuestions)
+      ? value.practiceQuestions.map(normalizeQuestion).slice(0, 3)
+      : []
   };
+}
+
+async function repairQuizWithQwen(raw: string, sourceType: Quiz["sourceType"]): Promise<Quiz> {
+  const data = await postQwenChatCompletion({
+    model: QWEN_MODEL,
+    messages: [
+      {
+        role: "system",
+        content: "你是 JSON 修复器。只能输出合法 JSON，不要解释。"
+      },
+      {
+        role: "user",
+        content: `请把下面内容修复成严格 JSON，结构必须是：
+{
+  "title": "标题",
+  "summary": "总结",
+  "subject": "学科",
+  "questionType": "题型",
+  "questions": [
+    {
+      "question": "题目",
+      "options": ["A", "B", "C", "D"],
+      "answerIndex": 0,
+      "explanation": "解析",
+      "knowledgePoint": "知识点",
+      "difficulty": "medium"
+    }
+  ]
+}
+
+要求：
+1. questions 必须有 3 道。
+2. 每题必须 4 个选项。
+3. answerIndex 必须是 0、1、2、3。
+4. difficulty 只能是 easy / medium / hard。
+5. 只输出 JSON。
+
+待修复内容：
+${raw}`
+      }
+    ],
+    temperature: 0.1,
+    enable_thinking: false,
+    max_tokens: 1800
+  });
+
+  const repaired = readAssistantText(data);
+  return normalizeQuiz(parseJsonObject<Quiz>(repaired), sourceType);
+}
+
+async function parseQuizWithRepair(raw: string, sourceType: Quiz["sourceType"]) {
+  try {
+    return normalizeQuiz(parseJsonObject<Quiz>(raw), sourceType);
+  } catch {
+    return repairQuizWithQwen(raw, sourceType);
+  }
 }
 
 export async function generateQuizFromImageWithQwen({
@@ -220,7 +299,7 @@ export async function generateQuizFromImageWithQwen({
     {
       role: "system",
       content:
-        "你是中文考试练习题生成器。你需要根据用户上传的题目图片，直接生成新的同类型练习题。只能输出合法 JSON 对象，不要输出 Markdown、代码块或额外说明。"
+        "你是中文考试练习题生成器。你必须根据用户上传的题目图片，直接生成新的同类型练习题。只能输出 JSON，不要 Markdown，不要解释。"
     },
     {
       role: "user",
@@ -229,22 +308,25 @@ export async function generateQuizFromImageWithQwen({
           type: "text",
           text: `请识别图片中的原题，并直接生成 ${questionCount} 道“同类型新题”。
 
-核心要求：
-1. 不要复述原题，不要拆解原题，不要把原题改写成解析题。
-2. 新题必须像真实考试/练习题。
-3. 新题与原题考点相同，解法相同或相近。
-4. 必须更换数字、条件、题干表达和答案。
-5. 不要照抄原题中的完整句子、数字组合或选项。
-6. 如果有图形、表格、函数图、几何图、物理图，请根据图中关键信息生成同类型新题。
-7. 如果是数学题，题干、选项和解析中的公式尽量使用 LaTeX，例如 $x^2-4x+3=0$、$\\frac{1}{2}$、$$A=\\pi r^2$$。
-8. 每题必须有 4 个选项，answerIndex 必须是 0、1、2、3。
-9. difficulty 只能是 easy / medium / hard。
-10. 默认生成 3 道题，不要多于 3 道。
+严格要求：
+1. 不要复述原题。
+2. 不要拆解原题。
+3. 不要把原题改写成解析题。
+4. 新题必须像真实考试/练习题。
+5. 新题与原题考点相同，解法相同或相近。
+6. 必须更换数字、条件、题干表达和答案。
+7. 不要照抄原题中的完整句子、数字组合或选项。
+8. 如果有图形、表格、函数图、几何图、物理图，请根据图中关键信息生成同类型新题。
+9. 数学公式尽量使用 LaTeX，例如 $x^2-4x+3=0$、$\\frac{1}{2}$、$$A=\\pi r^2$$。
+10. 每题必须有 4 个选项。
+11. answerIndex 必须是 0、1、2、3。
+12. difficulty 只能是 easy / medium / hard。
+13. 必须生成 3 道题。
 
-必须输出严格 JSON：
+只输出这个 JSON 结构：
 {
   "title": "同类型练习标题",
-  "summary": "简要说明这组题训练的考点，不要暴露原题答案",
+  "summary": "简要说明这组题训练的考点",
   "subject": "学科",
   "questionType": "题型",
   "questions": [
@@ -272,13 +354,13 @@ export async function generateQuizFromImageWithQwen({
   const data = await postQwenChatCompletion({
     model: QWEN_MODEL,
     messages,
-    temperature: 0.35,
+    temperature: 0.25,
     enable_thinking: false,
-    max_tokens: 1500
+    max_tokens: 1800
   });
 
   const raw = readAssistantText(data);
-  return normalizeQuiz(parseJsonObject<Quiz>(raw), "image");
+  return parseQuizWithRepair(raw, "image");
 }
 
 export async function generateQuizFromPdfTextWithQwen({
@@ -292,22 +374,24 @@ export async function generateQuizFromPdfTextWithQwen({
     {
       role: "system",
       content:
-        "你是中文考试练习题生成器。你需要根据用户上传的 PDF 文本内容，直接生成新的同类型练习题。只能输出合法 JSON 对象，不要输出 Markdown、代码块或额外说明。"
+        "你是中文考试练习题生成器。你必须根据用户上传的 PDF 文本内容，直接生成新的同类型练习题。只能输出 JSON，不要 Markdown，不要解释。"
     },
     {
       role: "user",
       content: `请根据下面 PDF 内容直接生成 ${questionCount} 道“同类型新题”。
 
-核心要求：
-1. 不要复述原文，不要拆解原文。
-2. 新题必须像真实考试/练习题。
-3. 新题要围绕 PDF 中的核心知识点。
-4. 如果是数学、物理、化学内容，公式尽量使用 LaTeX。
-5. 每题必须有 4 个选项，answerIndex 必须是 0、1、2、3。
-6. difficulty 只能是 easy / medium / hard。
-7. 默认生成 3 道题，不要多于 3 道。
+严格要求：
+1. 不要复述原文。
+2. 不要拆解原文。
+3. 新题必须像真实考试/练习题。
+4. 新题要围绕 PDF 中的核心知识点。
+5. 公式尽量使用 LaTeX。
+6. 每题必须有 4 个选项。
+7. answerIndex 必须是 0、1、2、3。
+8. difficulty 只能是 easy / medium / hard。
+9. 必须生成 3 道题。
 
-必须输出严格 JSON：
+只输出这个 JSON 结构：
 {
   "title": "同类型练习标题",
   "summary": "简要说明这组题训练的考点",
@@ -326,20 +410,20 @@ export async function generateQuizFromPdfTextWithQwen({
 }
 
 PDF 文本内容：
-${text.slice(0, 12000)}`
+${text.slice(0, 10000)}`
     }
   ];
 
   const data = await postQwenChatCompletion({
     model: QWEN_MODEL,
     messages,
-    temperature: 0.35,
+    temperature: 0.25,
     enable_thinking: false,
-    max_tokens: 1500
+    max_tokens: 1800
   });
 
   const raw = readAssistantText(data);
-  return normalizeQuiz(parseJsonObject<Quiz>(raw), "pdf");
+  return parseQuizWithRepair(raw, "pdf");
 }
 
 export async function analyzeImageWithQwen({
@@ -375,7 +459,7 @@ export async function generateQuizFromAnalysis(
   } = {}
 ): Promise<Quiz> {
   const sourceType = options.sourceType ?? "image";
-  return normalizeQuiz(parseJsonObject<Quiz>(analysisText), sourceType);
+  return parseQuizWithRepair(analysisText, sourceType);
 }
 
 export async function generateReviewFromMistakes({
@@ -439,9 +523,9 @@ ${JSON.stringify(wrongQuestions, null, 2)}`
   const data = await postQwenChatCompletion({
     model: QWEN_MODEL,
     messages,
-    temperature: 0.3,
+    temperature: 0.25,
     enable_thinking: false,
-    max_tokens: 1500
+    max_tokens: 1800
   });
 
   const raw = readAssistantText(data);
