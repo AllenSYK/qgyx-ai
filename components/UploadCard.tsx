@@ -25,18 +25,9 @@ type UploadCardProps = {
 const stages = ["正在识别题目", "正在生成同类型练习", "正在整理解析", "正在保存结果"];
 
 function getFileKind(file: File | null) {
-  if (!file) {
-    return "none";
-  }
-
-  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-    return "pdf";
-  }
-
-  if (file.type.startsWith("image/")) {
-    return "image";
-  }
-
+  if (!file) return "none";
+  if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) return "pdf";
+  if (file.type.startsWith("image/")) return "image";
   return "unsupported";
 }
 
@@ -68,9 +59,7 @@ export default function UploadCard({ initialRemainingCredits, userEmail }: Uploa
   }, [file, fileKind]);
 
   useEffect(() => {
-    if (!loading) {
-      return;
-    }
+    if (!loading) return;
 
     setActiveStage(0);
     const timer = window.setInterval(() => {
@@ -118,24 +107,28 @@ export default function UploadCard({ initialRemainingCredits, userEmail }: Uploa
 
     setLoading(true);
 
-    const response = await fetch("/api/analyze", {
-      method: "POST",
-      body: formData
-    });
+    try {
+      const response = await fetch("/api/analyze", {
+        method: "POST",
+        body: formData
+      });
 
-    const data = await response.json().catch(() => null);
+      const data = await response.json().catch(() => null);
 
-    setLoading(false);
+      if (!response.ok) {
+        setError(data?.error || "生成 Quiz 失败，请稍后再试。");
+        return;
+      }
 
-    if (!response.ok) {
-      setError(data?.error || "生成 Quiz 失败，请稍后再试。");
-      return;
+      setRemainingCredits(data.remainingCredits);
+      setAnalysisText(data.analysisText);
+      setSessionId(data.sessionId || "");
+      setQuiz(data.quiz as Quiz);
+    } catch {
+      setError("网络或服务器异常，请稍后再试。");
+    } finally {
+      setLoading(false);
     }
-
-    setRemainingCredits(data.remainingCredits);
-    setAnalysisText(data.analysisText);
-    setSessionId(data.sessionId || "");
-    setQuiz(data.quiz as Quiz);
   }
 
   async function saveStudyRecord(payload: StudyRecordPayload) {
@@ -153,8 +146,13 @@ export default function UploadCard({ initialRemainingCredits, userEmail }: Uploa
   }
 
   return (
-    <div className="space-y-6 pb-24 md:pb-0">
-      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-card sm:p-7">
+    <div
+      className={clsx(
+        "space-y-6 pb-24 transition-all duration-300 md:pb-0",
+        loading && "opacity-[0.98]"
+      )}
+    >
+      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-card transition-all duration-300 sm:p-7">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-medium text-emerald-700">
@@ -196,11 +194,12 @@ export default function UploadCard({ initialRemainingCredits, userEmail }: Uploa
         ) : null}
 
         <form onSubmit={handleSubmit} className="grid gap-5 lg:grid-cols-[1fr_0.9fr]">
-          <label className="flex min-h-72 cursor-pointer flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-blue-200 bg-blue-50/50 px-5 py-8 text-center transition hover:border-blue-300 hover:bg-blue-50">
+          <label className="flex min-h-72 cursor-pointer flex-col items-center justify-center rounded-[24px] border-2 border-dashed border-blue-200 bg-blue-50/50 px-5 py-8 text-center transition-all duration-300 hover:border-blue-300 hover:bg-blue-50">
             <input
               type="file"
               accept="image/png,image/jpeg,image/webp,application/pdf,.pdf"
               className="sr-only"
+              disabled={loading}
               onChange={(event) => {
                 const nextFile = event.target.files?.[0] || null;
                 setFile(nextFile);
@@ -208,14 +207,14 @@ export default function UploadCard({ initialRemainingCredits, userEmail }: Uploa
                 setError("");
               }}
             />
-            <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-blue-600 shadow-sm">
+            <span className="mb-4 flex h-16 w-16 items-center justify-center rounded-3xl bg-white text-blue-600 shadow-sm transition-transform duration-300">
               {fileKind === "pdf" ? <FileText className="h-8 w-8" /> : <ImagePlus className="h-8 w-8" />}
             </span>
             <span className="text-lg font-semibold text-slate-950">{file ? file.name : "选择图片或 PDF"}</span>
             <span className="mt-2 text-sm text-slate-500">JPG、PNG、WEBP 最大 5MB；PDF 最大 10MB</span>
           </label>
 
-          <div className="flex flex-col justify-between rounded-[24px] border border-slate-200 bg-slate-50 p-4">
+          <div className="flex flex-col justify-between rounded-[24px] border border-slate-200 bg-slate-50 p-4 transition-all duration-300">
             <div className="relative mb-4 min-h-56 overflow-hidden rounded-2xl bg-white">
               {previewUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -232,6 +231,16 @@ export default function UploadCard({ initialRemainingCredits, userEmail }: Uploa
                   <span className="mt-3 text-sm">等待上传</span>
                 </div>
               )}
+
+              {loading ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-white/75 backdrop-blur-sm transition-all">
+                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                  </div>
+                  <div className="text-sm font-semibold text-slate-900">{stages[activeStage]}</div>
+                  <div className="mt-1 text-xs text-slate-500">请稍等，正在生成结果</div>
+                </div>
+              ) : null}
             </div>
 
             {loading ? (
@@ -245,9 +254,9 @@ export default function UploadCard({ initialRemainingCredits, userEmail }: Uploa
                     <div key={stage} className="flex items-center gap-3 text-sm">
                       <span
                         className={clsx(
-                          "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold",
+                          "flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold transition-all duration-300",
                           index < activeStage && "bg-emerald-100 text-emerald-700",
-                          index === activeStage && "bg-blue-600 text-white",
+                          index === activeStage && "bg-blue-600 text-white shadow-sm",
                           index > activeStage && "bg-slate-100 text-slate-400"
                         )}
                       >
@@ -269,24 +278,30 @@ export default function UploadCard({ initialRemainingCredits, userEmail }: Uploa
             <button
               type="submit"
               disabled={loading || remainingCredits <= 0}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+              className="relative inline-flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-blue-600 px-5 py-3 font-semibold text-white transition-all duration-300 hover:bg-blue-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-blue-300"
             >
-              {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Sparkles className="h-5 w-5" />}
-              {loading ? "正在生成" : "生成同类型练习"}
+              <span
+                className={clsx(
+                  "absolute inset-0 bg-white/20 transition-transform duration-500",
+                  loading ? "translate-x-0" : "-translate-x-full"
+                )}
+              />
+              {loading ? <Loader2 className="relative h-5 w-5 animate-spin" /> : <Sparkles className="relative h-5 w-5" />}
+              <span className="relative">{loading ? stages[activeStage] : "生成同类型练习"}</span>
             </button>
           </div>
         </form>
       </section>
 
       {analysisText ? (
-        <details className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-card">
+        <details className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-card transition-all duration-300">
           <summary className="cursor-pointer font-semibold text-slate-950">AI 生成说明</summary>
           <MathText as="div" text={analysisText} className="mt-4 text-sm leading-7 text-slate-700" />
         </details>
       ) : null}
 
       {quiz ? (
-        <div className="space-y-3">
+        <div className="space-y-3 animate-in fade-in duration-300">
           {recordStatus ? (
             <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
               <BookOpenText className="h-4 w-4 text-blue-600" />
