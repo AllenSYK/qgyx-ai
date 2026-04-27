@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { KeyRound, Loader2, LockKeyhole, LogIn, Mail, RotateCcw, ShieldCheck, UserPlus } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -46,7 +46,19 @@ export default function AuthForm({ mode }: AuthFormProps) {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+
   const isLogin = mode === "login";
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+
+    const timer = setInterval(() => {
+      setCountdown((current) => Math.max(current - 1, 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [countdown]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -93,6 +105,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
     }
 
     setStep("otp");
+    setCountdown(60);
     setNotice("验证码已发送到你的邮箱，请输入验证码完成注册。");
   }
 
@@ -108,11 +121,13 @@ export default function AuthForm({ mode }: AuthFormProps) {
 
     const supabase = createSupabaseBrowserClient();
     setLoading(true);
+
     const result = await supabase.auth.verifyOtp({
       email,
       token: otp,
       type: "signup"
     });
+
     setLoading(false);
 
     if (result.error) {
@@ -125,14 +140,19 @@ export default function AuthForm({ mode }: AuthFormProps) {
   }
 
   async function resendCode() {
+    if (countdown > 0) return;
+
     setError("");
     setNotice("");
+
     const supabase = createSupabaseBrowserClient();
     setLoading(true);
+
     const result = await supabase.auth.resend({
       type: "signup",
       email
     });
+
     setLoading(false);
 
     if (result.error) {
@@ -140,6 +160,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
       return;
     }
 
+    setCountdown(60);
     setNotice("新的验证码已发送，请查看邮箱。");
   }
 
@@ -190,11 +211,11 @@ export default function AuthForm({ mode }: AuthFormProps) {
         <button
           type="button"
           onClick={resendCode}
-          disabled={loading}
+          disabled={loading || countdown > 0}
           className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
         >
           <RotateCcw className="h-4 w-4" />
-          重新发送验证码
+          {countdown > 0 ? `${countdown}s 后可重发` : "重新发送验证码"}
         </button>
       </form>
     );
