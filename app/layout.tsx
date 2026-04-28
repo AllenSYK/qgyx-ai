@@ -1,5 +1,6 @@
 import PageTransition from "@/components/PageTransition";
 import type { Metadata } from "next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import "katex/dist/katex.min.css";
 import "./globals.css";
 
@@ -17,6 +18,7 @@ export default function RootLayout({
     <html lang="zh-CN">
       <body>
         <PageTransition>{children}</PageTransition>
+        <SpeedInsights />
       </body>
     </html>
   );
