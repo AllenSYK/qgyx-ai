@@ -476,8 +476,7 @@ function toHttpError(error: unknown) {
 
   if (error instanceof AiTimeoutError) {
     return {
-      message: error.message.includes("首 token")
-        "模型响应超时，请稍后重试。",
+      message: "模型响应超时，请稍后重试。",
       status: 503
     };
   }
