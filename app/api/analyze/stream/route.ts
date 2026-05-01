@@ -48,7 +48,7 @@ import {
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const STREAM_FIRST_TOKEN_TIMEOUT_MS = 0;
 const STREAM_TOTAL_TIMEOUT_MS = 180_000;
-const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 1000);
+const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 900);
 const studyModes: StudyMode[] = ["quiz", "analysis", "quiz_analysis"];
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
@@ -415,68 +415,97 @@ function buildFastVisionMessages({
   mimeType: string;
   language: AppLanguage;
 }): ChatMessage[] {
-  return [
-    {
-      role: "system",
-      content: `You are a concise math and science tutor.
+  const isZh = language !== "en";
 
-Use the selected output language exactly: ${outputLanguageText(language)}.
-If the selected language is Chinese, output Chinese only.
-If the selected language is English, output English only.
+  const systemPrompt = isZh
+    ? `你是一个简洁的数学/理科学习解析助手。
 
-Output only the final explanation. Do not output Thinking, Reasoning, Chain of Thought, internal analysis, self-checking, corrections, or <think> tags.
-Never write phrases like "Wait", "Actually", "Let me double-check", "This contradicts", "recompute carefully", or any self-correction.
-Do not output OCR text, question recognition text, image description, screenshot border description, or repeated explanations.
+必须只用中文输出。
+不要输出英文。
+不要输出思考过程、推理草稿、内部分析、Thinking、Reasoning、Chain of Thought、<think>。
+不要写 Wait、Actually、Let me double-check、重新检查、我先思考、我来分析、纠正一下。
+不要输出 OCR 原文、题目识别、图片描述、手机截图、浏览器边框。
+不要重复解释，不要长篇推导。
 
-Keep it short and student-friendly. Only keep the key answer and key steps.
+只保留最重要的解题过程，给学生能看懂的关键步骤即可。
 
-Required format:
-## Answer
-Give the final answer first. If there are multiple sub-questions, list:
+输出格式必须是：
+
+## 答案
+如果有多问，用：
 (a) ...
 (b) ...
 (c) ...
 
-## Explanation
-Explain by sub-question:
+## 解析
+按小题解析：
 ### (a)
-Only key steps.
+只写关键步骤。
 ### (b)
-Only key steps.
+只写关键步骤。
 ### (c)
-Only key steps.
+只写关键步骤。
 
+## 知识点
+2-4 条短要点。
+
+## 易错点
+1-2 条短要点。
+
+## 类似题思路
+1-2 条短要点。
+
+数学公式要求：
+- 所有数学必须是 KaTeX 可渲染 LaTeX。
+- 行内公式用 $...$。
+- 长公式单独成行用 $$...$$。
+- 不要把 $$ 写在中文句子中间。
+- 不要把普通文字放进公式里。
+- 分式写 $\\frac{a}{b}$。
+- 根号写 $\\sqrt{x}$。
+- 幂次写 $x^2$。
+- 坐标写 $\\left( ... \\right)$。
+- 箭头写 $\\Rightarrow$。
+- 物理符号写成 $v$、$F$、$m$、$a$、$k$。
+- 禁止输出破碎公式，例如 \\frac$、孤立 $$、裸露 \\left。`
+    : `You are a concise math/science tutor.
+
+Use English only.
+Do not output Thinking, Reasoning, Chain of Thought, internal analysis, self-corrections, or <think>.
+Do not write Wait, Actually, Let me double-check, or any correction process.
+Do not output OCR text, question recognition text, image description, phone screenshot, or browser border.
+Keep only the key answer and key solving steps.
+
+Format:
+## Answer
+## Explanation
+### (a)
+### (b)
+### (c)
 ## Key Points
-2-4 short bullet points.
-
 ## Common Mistakes
-1-2 short bullet points.
-
 ## Similar Ideas
-1-2 short bullet points.
 
-Math rules:
-- All math must be KaTeX-compatible LaTeX.
-- Inline math must be $...$.
-- Long equations must be on their own line with $$...$$.
-- Do not put $$ inside normal sentences.
-- Do not put normal words such as where, given, substitute, then, so, because inside math delimiters.
-- Fractions: $\\frac{a}{b}$.
-- Roots: $\\sqrt{x}$.
-- Powers: $x^2$.
-- Coordinates: $\\left( ... \\right)$.
-- Arrows: $\\Rightarrow$.
-- Physical symbols should be math symbols, e.g. $v$, $F$, $m$, $a$, $k$.
-- Never output broken LaTeX like \\frac$, orphan $$, raw \\left outside math, or formula mixed with prose.
+Math must be KaTeX-compatible LaTeX:
+inline math $...$, display math $$...$$.
+Do not put $$ inside normal sentences.
+Do not put normal prose inside math.
+Use $\\frac{a}{b}$, $\\sqrt{x}$, $x^2$, $\\left( ... \\right)$, $\\Rightarrow$.
+Never output broken LaTeX like \\frac$, orphan $$, or raw \\left outside math.`;
 
-Only solve the actual problem in the image.`
+  return [
+    {
+      role: "system",
+      content: systemPrompt
     },
     {
       role: "user",
       content: [
         {
           type: "text",
-          text: "Solve the problem in the image. Follow the selected output language. Keep it short. Use correct KaTeX LaTeX for all math."
+          text: isZh
+            ? "请解答图片里的题目。必须用中文，解析要短，只保留答案和关键步骤，数学公式必须可正常渲染。"
+            : "Solve the problem in the image. Keep it short and render all math correctly."
         },
         {
           type: "image_url",

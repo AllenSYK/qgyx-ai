@@ -8,29 +8,50 @@ import { normalizeLatexText } from "@/lib/latex";
 
 type MarkdownRendererProps = {
   text?: string | null;
+  content?: string | null;
   className?: string;
   as?: "span" | "div" | "p" | "h3";
 };
 
-function stripReasoning(input: string) {
+function stripNoise(input: string) {
   let text = String(input || "");
 
   text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
   text = text.replace(/<think>[\s\S]*$/gi, "");
 
   text = text.replace(
-    /(^|\n)#{0,6}\s*(思考过程|推理过程|推理草稿|内部思考|内部推理|Thinking|Reasoning|Chain of Thought|Internal Reasoning|Analysis)\s*[:：]?\s*[\s\S]*?(?=\n#{1,6}\s*(题目|答案|解析|涉及知识点|知识点|易错点|类似题目思路|Question|Answer|Explanation|Key Points|Common Mistakes|Similar Ideas)|$)/gi,
+    /(^|\n)#{0,6}\s*(思考过程|推理过程|推理草稿|内部思考|内部推理|Thinking|Reasoning|Chain of Thought|Internal Reasoning|Analysis)\s*[:：]?\s*[\s\S]*?(?=\n#{1,6}\s*(答案|解析|知识点|易错点|类似题思路|Answer|Explanation|Key Points|Common Mistakes|Similar Ideas)|$)/gi,
     "$1"
   );
 
-  text = text.replace(/^\s*(Thinking:|Reasoning:|Let me think|I will analyze|让我先思考|我先分析|我们先分析).*$/gim, "");
-  text = text.replace(/^\s*(Wait|Actually|Let'?s recompute|Let me double-check|This contradicts|Better:).*$/gim, "");
+  text = text
+    .split("\n")
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return true;
+
+      if (/^(Wait|Actually|Let'?s|Let me double-check|This contradicts|Better:|Recompute|Correction)/i.test(t)) {
+        return false;
+      }
+
+      if (/^(我先思考|我来分析|让我们分析|纠正一下|重新检查|等等|实际上|让我重新)/.test(t)) {
+        return false;
+      }
+
+      if (/^(题目识别|OCR|识别到的题目|Question Recognition|Image description)/i.test(t)) {
+        return false;
+      }
+
+      return true;
+    })
+    .join("\n");
 
   return text.trim();
 }
 
-export default function MarkdownRenderer({ text, className, as = "div" }: MarkdownRendererProps) {
-  const content = normalizeLatexText(stripReasoning(String(text || "")));
+export default function MarkdownRenderer({ text, content, className, as = "div" }: MarkdownRendererProps) {
+  const raw = typeof text === "string" ? text : String(content || "");
+  const rendered = normalizeLatexText(stripNoise(raw));
   const inline = as === "span";
   const Wrapper = as;
 
@@ -59,7 +80,7 @@ export default function MarkdownRenderer({ text, className, as = "div" }: Markdo
           pre: ({ children }) => <pre className="my-3 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-sm text-white">{children}</pre>
         }}
       >
-        {content}
+        {rendered}
       </ReactMarkdown>
     </Wrapper>
   );

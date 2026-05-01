@@ -23,7 +23,7 @@ import { LoadingSkeleton } from "@/components/LoadingSkeleton";
 import QuizCard from "@/components/QuizCard";
 import ReviewCard from "@/components/ReviewCard";
 import { useGenerationTask } from "@/components/GenerationTaskProvider";
-import { useLanguagePreference } from "@/components/LanguageSwitcher";
+import { getStoredLanguage, useLanguagePreference } from "@/components/LanguageSwitcher";
 import type { StudyMode, StudyRecordPayload, WrongQuestion } from "@/types/quiz";
 
 type UploadCardProps = {
@@ -229,10 +229,12 @@ export default function UploadCard({
     setSubmitting(true);
 
     try {
+      const submitLanguage = getStoredLanguage();
+
       await startGeneration({
         file,
         mode: studyMode,
-        language
+        language: submitLanguage
       });
     } finally {
       setSubmitting(false);
