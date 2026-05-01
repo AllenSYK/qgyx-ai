@@ -1,7 +1,7 @@
 ﻿const ONE_MB = 1024 * 1024;
-const COMPRESS_THRESHOLD = 700 * 1024;
-const MAX_EDGE = 1280;
-const JPEG_QUALITY = 0.8;
+const COMPRESS_THRESHOLD = 1500 * 1024;
+const MAX_EDGE = 1024;
+const JPEG_QUALITY = 0.76;
 
 function isCompressibleImage(file: File) {
   return file.type.startsWith("image/") && !file.name.toLowerCase().endsWith(".pdf");
@@ -49,6 +49,7 @@ export async function compressImageForUpload(file: File) {
     const scale = longestEdge > MAX_EDGE ? MAX_EDGE / longestEdge : 1;
     const width = Math.max(1, Math.round(image.naturalWidth * scale));
     const height = Math.max(1, Math.round(image.naturalHeight * scale));
+
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { alpha: false });
 
@@ -61,7 +62,7 @@ export async function compressImageForUpload(file: File) {
     context.fillStyle = "#fff";
     context.fillRect(0, 0, width, height);
     context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = "high";
+    context.imageSmoothingQuality = "medium";
     context.drawImage(image, 0, 0, width, height);
 
     let blob = await canvasToJpegBlob(canvas, JPEG_QUALITY);
@@ -71,7 +72,7 @@ export async function compressImageForUpload(file: File) {
     }
 
     if (blob.size > ONE_MB) {
-      const smallerBlob = await canvasToJpegBlob(canvas, 0.72);
+      const smallerBlob = await canvasToJpegBlob(canvas, 0.68);
       if (smallerBlob && smallerBlob.size < blob.size) {
         blob = smallerBlob;
       }

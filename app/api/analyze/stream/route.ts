@@ -48,7 +48,7 @@ import {
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const STREAM_FIRST_TOKEN_TIMEOUT_MS = 0;
 const STREAM_TOTAL_TIMEOUT_MS = 180_000;
-const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 2200);
+const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 1400);
 const studyModes: StudyMode[] = ["quiz", "analysis", "quiz_analysis"];
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
@@ -418,69 +418,64 @@ function buildFastVisionMessages({
   return [
     {
       role: "system",
-      content: `你是数学与理科学习题目解析助手。请直接识别图片中的真实题目并解答，用 ${outputLanguageText(language)} 输出 Markdown。
+      content: `You are a concise math and science tutor.
 
-只输出一份原题解析，不要重复生成第二份解析。
-不要输出思考过程、推理草稿、内部分析、Thinking、Reasoning、<think>...</think>。
-直接从 ## 题目 开始输出正式解析。
-不要输出思考过程、推理草稿、内部分析、Thinking、Reasoning、<think>...</think>。
-直接从 ## 题目 开始输出正式解析。
+Output language: ${outputLanguageText(language)}.
 
-必须按下面结构输出：
+Rules:
+- Output final explanation only.
+- Do not output Thinking, Reasoning, Chain of Thought, internal analysis, or <think> tags.
+- Do not output OCR text, question recognition text, image description, screenshot border description, or repeated explanations.
+- Keep it short. Use only the key answer and key steps.
+- If there are multiple sub-questions, explain them one by one.
 
-## 题目
-写出识别到的题干、公式、图形信息、表格或选项。
+Required format:
 
-## 答案
-给出最终答案。
+## Answer
+Give the final answer first. If there are multiple sub-questions, list answers like:
+(a) ...
+(b) ...
+(c) ...
 
-## 解析
-按步骤推导。所有数学内容必须使用 KaTeX 可渲染的标准 LaTeX：
-- 行内公式写成 $...$
-- 独立公式写成 $...$
-- 分式写成 $\\frac{a}{b}$，不要写成 a/b
-- 根号写成 $\\sqrt{x}$，不要写成 sqrt(x)
-- 幂次写成 $x^2$，不要写成 x²
-- 箭头写成 $\\Rightarrow$
-- 乘号写成 $\\cdot$ 或 $\\times$
-- 导数写成 $\\frac{dy}{dx}$
-- 禁止在 \frac 后插入多余的美元符号，例如不要把分式写成破碎的 LaTeX
-- 禁止在公式中插入多余的 $
-- 禁止把 $$ 写在中文句子中间；长公式必须单独成行写成：
-$$
-公式
-$$
-- 中文句子里的短公式只能写成 $...$
-- 禁止代码块包公式
+## Explanation
+Explain by sub-question:
+### (a)
+Simple key steps only.
+### (b)
+Simple key steps only.
+### (c)
+Simple key steps only.
 
-## 涉及知识点
-保留这一部分，2-4 个要点。涉及公式必须用 $...$ 或 $...$。
+## Key Points
+2-4 short bullet points.
 
-## 易错点
-保留这一部分。涉及公式必须用 $...$ 或 $...$。
+## Common Mistakes
+1-2 short bullet points.
 
-## 类似题目思路
-保留这一部分，2-3 条同类题迁移思路。涉及公式必须用 $...$ 或 $...$。
+## Similar Ideas
+1-2 short bullet points.
 
-禁止：
-- 不要描述图片边框、浏览器、手机截图、黑边或无关 UI
-- 不要说根据图片中可见信息
-- 不要说图片内容复杂
-- 不要说系统已尝试
-- 不要输出乱码公式
-- 不要输出 \\frac$、$$\\angle、\\left 裸露在文字中的形式
-- 不要输出第二份解析
+Math format:
+- All math must be KaTeX-compatible LaTeX.
+- Inline math: $...$
+- Long equations: put on their own line with $$...$$.
+- Do not put $$ inside normal sentences.
+- Fractions: $\\frac{a}{b}$.
+- Roots: $\\sqrt{x}$.
+- Powers: $x^2$.
+- Coordinates: $\\left( ... \\right)$.
+- Arrows: $\\Rightarrow$.
+- Physical symbols should be math symbols, e.g. $v$, $F$, $m$, $a$, $k$.
+- Never output broken LaTeX like \\frac$, orphan $$, or raw \\left outside math.
 
-如果确实看不清题目，只输出：题目不清晰，无法可靠识别。
-不要先解释你如何思考，不要展示内部推理，只展示最终解析。
-不要先解释你如何思考，不要展示内部推理，只展示最终解析。`
+Use the simplest student-friendly explanation.`
     },
     {
       role: "user",
       content: [
         {
           type: "text",
-          text: "请识别并解析图片中的题目。数学公式必须用 KaTeX 可渲染的 LaTeX。"
+          text: "Solve the problem in the image. Keep the explanation short and render all math as KaTeX-compatible LaTeX."
         },
         {
           type: "image_url",
@@ -690,11 +685,13 @@ export async function POST(request: Request) {
             throw new AnalyzeStreamError("账户状态异常，请联系客服处理。微信：15155132939", 403);
           }
 
-          const cached = await findCachedOriginal({
-            admin,
-            imageHash,
-            language
-          });
+          const cached = process.env.ENABLE_STREAM_CACHE === "1"
+            ? await findCachedOriginal({
+                admin,
+                imageHash,
+                language
+              })
+            : null;
 
           if (cached) {
             const cachedResponse = await createCachedResponse({

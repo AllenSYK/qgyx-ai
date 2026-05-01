@@ -66,7 +66,7 @@ type GenerationTaskContextValue = {
   updateTask: (patch: Partial<GenerationTaskState>) => void;
 };
 
-const STORAGE_KEY = "qgyx:generation-tasks-v14";
+const STORAGE_KEY = "qgyx:generation-tasks-v15";
 
 const initialTask: GenerationTaskState = {
   id: "",
@@ -491,14 +491,14 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
       if (kind === "image") {
         updateTaskById(taskId, {
           progress: 18,
-          step: "正在优化图片，准备上传"
+          step: "正在准备上传"
         });
 
         uploadFile = await compressImageForUpload(file);
 
         updateTaskById(taskId, {
           progress: 24,
-          step: "图片已优化，正在上传"
+          step: "正在上传图片"
         });
       }
 
