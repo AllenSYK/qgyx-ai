@@ -104,7 +104,7 @@ ${RECOGNITION_JSON_SHAPE}`
       temperature: 0.05,
       enable_thinking: false,
       max_tokens: 2200,
-      timeoutMs: 18000
+      timeoutMs: 90000
     });
 
     rawText = readAssistantText(data);

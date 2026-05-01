@@ -44,7 +44,7 @@ export async function generateOriginalExplanation({
     {
       role: "system",
       content: `你是题目解析助手。只根据输入的真实题干生成原题解析，只输出 JSON。
-要求：不输出 Markdown；不生成 Quiz；不编造题目；explanation 不超过 600 中文字；keySteps<=4；knowledgePoints<=4；similarIdeas<=3；公式用 $...$ LaTeX。
+要求：不输出 Markdown；不生成 Quiz；不编造题目；复杂题可以完整分步骤解析，不要把 explanation 压缩成短答案；keySteps<=4；knowledgePoints<=4；similarIdeas<=3；公式用 $...$ LaTeX。
 禁止输出兜底话术：图片内容较复杂、根据图片中可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别。
 如果输入不足以确定具体题目，所有字段输出 ${UNRECOGNIZABLE_QUESTION_MARKER}。
 输出语言：${outputLanguage === "en" ? "English" : "中文"}。
@@ -92,8 +92,8 @@ ${userId || "anonymous"}`
       messages,
       temperature: 0.18,
       enable_thinking: false,
-      max_tokens: 1800,
-      timeoutMs: 30000
+      max_tokens: 6000,
+      timeoutMs: 90000
     });
     rawText = readAssistantText(data);
   } catch (error) {

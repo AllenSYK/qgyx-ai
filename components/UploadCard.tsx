@@ -24,6 +24,7 @@ import QuizCard from "@/components/QuizCard";
 import ReviewCard from "@/components/ReviewCard";
 import { useGenerationTask } from "@/components/GenerationTaskProvider";
 import { useLanguagePreference } from "@/components/LanguageSwitcher";
+import { compressImageForUpload } from "@/lib/client/compressImage";
 import type { StudyMode, StudyRecordPayload, WrongQuestion } from "@/types/quiz";
 
 type UploadCardProps = {
@@ -229,7 +230,13 @@ export default function UploadCard({
     setSubmitting(true);
 
     try {
-      await startGeneration({ file, mode: studyMode, language });
+      const uploadFile = fileKind === "image" ? await compressImageForUpload(file) : file;
+      await startGeneration({
+        file: uploadFile,
+        originalFile: uploadFile === file ? undefined : file,
+        mode: studyMode,
+        language
+      });
     } finally {
       setSubmitting(false);
     }
@@ -394,7 +401,7 @@ export default function UploadCard({
             <span className="text-lg font-semibold text-slate-950">
               {file ? file.name : task.file?.name || "选择图片或 PDF"}
             </span>
-            <span className="mt-2 text-sm text-slate-500">JPG、PNG、WEBP 上传前自动压缩；PDF 最大 10MB</span>
+            <span className="mt-2 text-sm text-slate-500">JPG、PNG、WEBP 保持清晰压缩；PDF 最大 10MB</span>
           </label>
 
           <div className="flex flex-col rounded-[24px] border border-slate-200 bg-slate-50 p-4">
@@ -638,6 +645,36 @@ export default function UploadCard({
           <BookOpenText className="h-4 w-4 text-blue-600" />
           {task.recordStatus}
         </div>
+      ) : null}
+
+      {task.analysisText ? (
+        <section className="rounded-[28px] border border-blue-100 bg-white/95 p-5 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur sm:p-7">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
+                <ScanSearch className="h-4 w-4" />
+                {task.status === "running" ? "AI 正在实时解析" : "完整解析"}
+              </div>
+              <h2 className="mt-3 text-2xl font-semibold text-slate-950">
+                {task.status === "running" ? "解析正在生成" : "原题解析"}
+              </h2>
+            </div>
+            {task.status === "error" ? (
+              <button
+                type="button"
+                onClick={() => void retryGeneration()}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition duration-200 ease-out hover:bg-blue-700 active:scale-[0.97] active:opacity-75"
+              >
+                <RotateCcw className="h-4 w-4" />
+                重新生成解析
+              </button>
+            ) : null}
+          </div>
+
+          <div className="max-h-[720px] overflow-y-auto rounded-3xl border border-slate-200 bg-slate-50 p-4">
+            <MarkdownRenderer as="div" text={task.analysisText} className="text-sm leading-7 text-slate-800" />
+          </div>
+        </section>
       ) : null}
 
       {task.analysis ? (

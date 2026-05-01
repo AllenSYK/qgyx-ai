@@ -40,16 +40,16 @@ function normalizeVisionExplanation(value: OriginalExplanation): OriginalExplana
 
   return {
     ...value,
-    title: trimText(value.title, 80),
-    detectedText: trimText(value.detectedText, 1200),
+    title: trimText(value.title, 120),
+    detectedText: trimText(value.detectedText, 4000),
     subject: trimText(value.subject, 40),
     topic: trimText(value.topic, 60),
-    finalAnswer: trimText(value.finalAnswer, 300),
-    explanation: trimText(value.explanation, 600),
-    keySteps: value.keySteps.map((item) => trimText(item, 120)).filter(Boolean).slice(0, 4),
-    knowledgePoints: knowledgePoints.map((item) => trimText(item, 80)).filter(Boolean).slice(0, 4),
-    commonMistake: trimText(value.commonMistake, 160),
-    similarIdeas: value.similarIdeas.map((item) => trimText(item, 120)).filter(Boolean).slice(0, 3)
+    finalAnswer: trimText(value.finalAnswer, 4000),
+    explanation: trimText(value.explanation, 12000),
+    keySteps: value.keySteps.map((item) => trimText(item, 1200)).filter(Boolean).slice(0, 4),
+    knowledgePoints: knowledgePoints.map((item) => trimText(item, 240)).filter(Boolean).slice(0, 4),
+    commonMistake: trimText(value.commonMistake, 1200),
+    similarIdeas: value.similarIdeas.map((item) => trimText(item, 1200)).filter(Boolean).slice(0, 3)
   };
 }
 
@@ -95,8 +95,8 @@ function buildMessages({
 }): ChatMessage[] {
   const outputLanguage = outputLanguageText(language);
   const system = retry
-    ? `你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出 Markdown、兜底话术、上传/裁剪建议。解释不超过 600 中文字，keySteps<=4，knowledgePoints<=4，similarIdeas<=3，公式用 LaTeX。输出语言：${outputLanguage}。`
-    : `你是拍题解析助手。任务：根据图片生成原题解析。只输出 JSON；看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、请重新上传、请裁剪、无法识别”等兜底话术。解释不超过 600 中文字，keySteps<=4，knowledgePoints<=4，similarIdeas<=3，公式用 $...$ LaTeX。输出语言：${outputLanguage}。`;
+    ? `你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出 Markdown、兜底话术、上传/裁剪建议。复杂题可以完整分步骤解析，不要为了 JSON 而截短关键推导。keySteps<=4，knowledgePoints<=4，similarIdeas<=3，公式用 LaTeX。输出语言：${outputLanguage}。`
+    : `你是拍题解析助手。任务：根据图片生成原题解析。只输出 JSON；看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、请重新上传、请裁剪、无法识别”等兜底话术。复杂题允许完整分步骤解析，不要限制为短答案；keySteps<=4，knowledgePoints<=4，similarIdeas<=3，公式用 $...$ LaTeX。输出语言：${outputLanguage}。`;
 
   return [
     {
@@ -127,8 +127,8 @@ async function requestVisionExplanation(messages: ChatMessage[]) {
     messages,
     temperature: 0.06,
     enable_thinking: false,
-    max_tokens: 1800,
-    timeoutMs: 45000
+    max_tokens: 6000,
+    timeoutMs: 90000
   });
 
   return readAssistantText(data);

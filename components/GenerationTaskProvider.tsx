@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { AppLanguage } from "@/lib/language";
-import { compressImageForUpload } from "@/lib/image-compress";
 import type { AnalysisResult, Quiz, StudyMode, WrongQuestion } from "@/types/quiz";
 
 type FileMeta = {
@@ -48,6 +47,7 @@ export type GenerationTaskState = {
 
 type StartGenerationInput = {
   file: File;
+  originalFile?: File;
   mode: StudyMode;
   language: AppLanguage;
 };
@@ -122,9 +122,18 @@ function toSerializableTask(task: GenerationTaskState) {
 }
 
 function sanitizeCachedTask(task: Partial<GenerationTaskState>): GenerationTaskState {
+  const createdAt = typeof task.createdAt === "string" ? Date.parse(task.createdAt) : 0;
+  const staleRunning =
+    task.status === "running" &&
+    (!createdAt || Number.isNaN(createdAt) || Date.now() - createdAt > 6 * 60 * 60 * 1000);
+
   return {
     ...initialTask,
     ...task,
+    status: staleRunning ? "error" : task.status || initialTask.status,
+    jobStatus: staleRunning ? "failed" : task.jobStatus || initialTask.jobStatus,
+    step: staleRunning ? "历史任务已停止，可重新上传" : task.step || initialTask.step,
+    error: staleRunning ? "这是本地缓存的旧任务状态，不会影响今日额度。" : task.error || "",
     previewUrl: "",
     remainingCredits: null,
     dailyUsed: null,
@@ -183,6 +192,12 @@ function applyServerPayload(task: GenerationTaskState, payload: Record<string, u
   const analysis = (payload.analysis as AnalysisResult | null) || task.analysis;
   const quiz = (payload.quiz as Quiz | null) || task.quiz;
   const quizFailedAfterAnalysis = jobStatus === "failed" && Boolean(analysis) && !quiz;
+  const payloadAnalysisText =
+    typeof payload.analysisText === "string"
+      ? payload.analysisText
+      : typeof payload.markdown === "string"
+        ? payload.markdown
+        : "";
 
   return {
     ...task,
@@ -201,14 +216,14 @@ function applyServerPayload(task: GenerationTaskState, payload: Record<string, u
     quiz,
     quizResult: payload.quizResult ?? task.quizResult,
     wrongExplanations: (payload.wrongExplanations as Record<string, unknown> | undefined) || task.wrongExplanations,
-    analysisText: analysis
+    analysisText: payloadAnalysisText || (analysis
       ? [
           `题目识别：${analysis.recognizedText}`,
           `正确答案：${analysis.answer}`,
           `解析：${analysis.explanation}`,
           `知识点：${analysis.knowledgePoints.join("、")}`
         ].join("\n\n")
-      : task.analysisText,
+      : task.analysisText),
     remainingCredits:
       typeof payload.remainingCredits === "number" ? payload.remainingCredits : task.remainingCredits,
     dailyUsed:
@@ -222,6 +237,55 @@ function applyServerPayload(task: GenerationTaskState, payload: Record<string, u
     analysisRecordId:
       typeof payload.analysisRecordId === "string" ? payload.analysisRecordId : task.analysisRecordId
   };
+}
+
+type StreamEvent = {
+  event: string;
+  data: Record<string, unknown>;
+};
+
+function parseStreamBlocks(buffer: string) {
+  const events: StreamEvent[] = [];
+  let nextBuffer = buffer.replace(/\r\n/g, "\n");
+
+  while (true) {
+    const boundary = nextBuffer.indexOf("\n\n");
+
+    if (boundary === -1) {
+      break;
+    }
+
+    const block = nextBuffer.slice(0, boundary);
+    nextBuffer = nextBuffer.slice(boundary + 2);
+    const eventLine = block
+      .split("\n")
+      .find((line) => line.startsWith("event:"));
+    const data = block
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+
+    if (!data) {
+      continue;
+    }
+
+    try {
+      events.push({
+        event: eventLine ? eventLine.slice(6).trim() : "message",
+        data: JSON.parse(data) as Record<string, unknown>
+      });
+    } catch {
+      events.push({
+        event: "error",
+        data: {
+          errorMessage: "流式响应解析失败，请重试。"
+        }
+      });
+    }
+  }
+
+  return { events, buffer: nextBuffer };
 }
 
 export function GenerationTaskProvider({ children }: { children: React.ReactNode }) {
@@ -323,7 +387,7 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
       activePollTargets.forEach((item) => {
         void pollJob(item.id, item.jobId);
       });
-    }, 2000);
+    }, 1000);
 
     return () => window.clearInterval(timer);
   }, [pollJob, tasks]);
@@ -365,11 +429,12 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
   }, [activeTaskId]);
 
   const startGeneration = useCallback(
-    async ({ file, mode, language }: StartGenerationInput) => {
-      lastInputRef.current = { file, mode, language };
-      const kind = getFileKind(file);
+    async ({ file, originalFile, mode, language }: StartGenerationInput) => {
+      lastInputRef.current = { file, originalFile, mode, language };
+      const displayFile = originalFile || file;
+      const kind = getFileKind(displayFile);
       const taskId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const previewUrl = kind === "image" ? URL.createObjectURL(file) : "";
+      const previewUrl = kind === "image" ? URL.createObjectURL(displayFile) : "";
 
       if (previewUrl) {
         previewUrlsRef.current.set(taskId, previewUrl);
@@ -383,9 +448,9 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
         mode,
         language,
         file: {
-          name: file.name,
-          type: file.type,
-          size: file.size,
+          name: displayFile.name,
+          type: displayFile.type,
+          size: displayFile.size,
           kind
         },
         previewUrl,
@@ -419,18 +484,9 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
         return;
       }
 
-      let uploadFile = file;
+      const uploadFile = file;
 
       if (kind === "image") {
-        if (file.size >= 1024 * 1024) {
-          updateTaskById(taskId, {
-            progress: 14,
-            step: "正在压缩图片"
-          });
-        }
-
-        uploadFile = await compressImageForUpload(file);
-
         if (uploadFile.size > 5 * 1024 * 1024) {
           updateTaskById(taskId, {
             status: "error",
@@ -451,8 +507,109 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
       try {
         updateTaskById(taskId, {
           progress: 25,
-          step: "正在识别题目"
+          step: kind === "image" ? "正在读取题目..." : "正在识别题目"
         });
+
+        if (kind === "image") {
+          const response = await fetch("/api/analyze/stream", {
+            method: "POST",
+            body: formData
+          });
+          const contentType = response.headers.get("content-type") || "";
+
+          if (!response.ok || !response.body || !contentType.includes("text/event-stream")) {
+            const raw = await response.json().catch(() => null);
+            const envelope = readEnvelope(raw);
+
+            updateTaskById(taskId, {
+              status: "error",
+              jobStatus: "failed",
+              progress: 100,
+              step: "生成失败，可重试",
+              error: envelope.error || "生成结果失败，请稍后再试。"
+            });
+            return;
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+
+            if (done) {
+              break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            const parsed = parseStreamBlocks(buffer);
+            buffer = parsed.buffer;
+
+            for (const item of parsed.events) {
+              if (item.event === "delta") {
+                const text = typeof item.data.text === "string" ? item.data.text : "";
+
+                if (!text) {
+                  continue;
+                }
+
+                setTasks((current) =>
+                  current.map((taskItem) =>
+                    taskItem.id === taskId
+                      ? {
+                          ...taskItem,
+                          status: "running",
+                          jobStatus: "generating_explanation",
+                          progress: typeof item.data.progress === "number" ? item.data.progress : Math.max(taskItem.progress, 55),
+                          step: typeof item.data.stage === "string" ? item.data.stage : "正在生成解析...",
+                          analysisText: `${taskItem.analysisText}${text}`
+                        }
+                      : taskItem
+                  )
+                );
+                continue;
+              }
+
+              if (item.event === "error") {
+                setTasks((current) =>
+                  current.map((taskItem) =>
+                    taskItem.id === taskId
+                      ? {
+                          ...taskItem,
+                          status: "error",
+                          jobStatus: "failed",
+                          progress: 100,
+                          step: typeof item.data.stage === "string" ? item.data.stage : "生成失败，可重试",
+                          error:
+                            typeof item.data.errorMessage === "string"
+                              ? item.data.errorMessage
+                              : "生成结果失败，请稍后再试。",
+                          analysisText:
+                            typeof item.data.analysisText === "string"
+                              ? item.data.analysisText
+                              : taskItem.analysisText
+                        }
+                      : taskItem
+                  )
+                );
+                continue;
+              }
+
+              if (item.event === "meta" || item.event === "done") {
+                setTasks((current) =>
+                  current.map((taskItem) =>
+                    taskItem.id === taskId
+                      ? applyServerPayload(taskItem, item.data)
+                      : taskItem
+                  )
+                );
+              }
+            }
+          }
+
+          return;
+        }
 
         const response = await fetch("/api/analyze", {
           method: "POST",
@@ -537,7 +694,7 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
   const retryGeneration = useCallback(async () => {
     const current = tasks.find((item) => item.id === activeTaskId);
 
-    if (current?.jobId) {
+    if (current?.jobId && (current.analysis || current.originalExplanation || current.quiz)) {
       await retryJob(current.jobId);
       return;
     }
