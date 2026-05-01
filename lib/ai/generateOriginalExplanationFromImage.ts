@@ -147,49 +147,51 @@ function buildMessages({
   isComplex: boolean;
 }): ChatMessage[] {
   const outputLanguage = outputLanguageText(language);
+  const imgClearErr = '{“error”:”' + IMAGE_NOT_CLEAR + '”}';
+
   const mathRule =
-    “所有输出要像考试试卷：detectedText、finalAnswer、explanation、keySteps、commonMistake、knowledgePoints、similarIdeas、steps、formulas 中凡是可以用数学形式表达的内容，都必须写成标准数学形式。\n” +
-    mathOutputInstruction + “\n”;
+    '所有输出要像考试试卷：detectedText、finalAnswer、explanation、keySteps、commonMistake、knowledgePoints、similarIdeas、steps、formulas 中凡是可以用数学形式表达的内容，都必须写成标准数学形式。\n' +
+    mathOutputInstruction + '\n';
 
   const completenessRule = isComplex
-    ? “数学推导必须完整，不能停在中间式。例如得到 12x^4 + 5x^2 - 2 = 0 后必须继续解出 x 和 y 值。steps 中每个步骤必须包含 title、content 和 formula。formulas 数组必须包含推导中用到的所有关键公式。”
-    : “”;
+    ? '数学推导必须完整，不能停在中间式。例如得到 12x^4 + 5x^2 - 2 = 0 后必须继续解出 x 和 y 值。steps 中每个步骤必须包含 title、content 和 formula。formulas 数组必须包含推导中用到的所有关键公式。'
+    : '';
 
   const retryPrefix =
-    “你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 {\”error\”:\”” + IMAGE_NOT_CLEAR + “\”}。不要输出 Markdown、思考过程、自我纠错或兜底废话。”;
+    '你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 ' + imgClearErr + '。不要输出 Markdown、思考过程、自我纠错或兜底废话。';
 
   const normalPrefix =
-    “你是拍题解析助手。请直接识别并解析图片中的真实题目，只输出 JSON。看不清具体题目时只输出 {\”error\”:\”” + IMAGE_NOT_CLEAR + “\”}。禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、自我检查、自我纠错、<think> 标签。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别”等兜底话术。解析要短，只保留关键步骤；”;
+    '你是拍题解析助手。请直接识别并解析图片中的真实题目，只输出 JSON。看不清具体题目时只输出 ' + imgClearErr + '。禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、自我检查、自我纠错、' + '<think>' + ' 标签。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别”等兜底话术。解析要短，只保留关键步骤；';
 
   const system = retry
-    ? retryPrefix + mathRule + completenessRule + “keySteps<=4，knowledgePoints<=4，similarIdeas<=2，steps 最多 6 步。输出语言：” + outputLanguage + “。”
-    : normalPrefix + mathRule + completenessRule + “keySteps<=4，knowledgePoints<=4，similarIdeas<=2，steps 最多 6 步。输出语言：” + outputLanguage + “。”;
+    ? retryPrefix + mathRule + completenessRule + 'keySteps<=4，knowledgePoints<=4，similarIdeas<=2，steps 最多 6 步。输出语言：' + outputLanguage + '。'
+    : normalPrefix + mathRule + completenessRule + 'keySteps<=4，knowledgePoints<=4，similarIdeas<=2，steps 最多 6 步。输出语言：' + outputLanguage + '。';
 
-  if (tier === “max” && isComplex) {
+  if (tier === 'max' && isComplex) {
     const systemContent =
       system +
-      “\n你是专业数学解析助手，需要进行严格的逐步推导验证。每一步推导必须逻辑严密，最终答案必须与推导过程一致。\nJSON 字段：\n” +
+      '\n你是专业数学解析助手，需要进行严格的逐步推导验证。每一步推导必须逻辑严密，最终答案必须与推导过程一致。\nJSON 字段：\n' +
       ORIGINAL_EXPLANATION_JSON_SHAPE;
 
     const userText =
-      “请识别并解析图片中的数学题目。要求：1) 完整推导不能省略中间步骤 2) 每步写出所用公式 3) 最终答案必须与推导一致 4) 如果发现常见易错点务必标注。图像摘要：” + (imageSummary || “无”);
+      '请识别并解析图片中的数学题目。要求：1) 完整推导不能省略中间步骤 2) 每步写出所用公式 3) 最终答案必须与推导一致 4) 如果发现常见易错点务必标注。图像摘要：' + (imageSummary || '无');
 
     return [
       {
-        role: “system” as const,
+        role: 'system' as const,
         content: systemContent
       },
       {
-        role: “user” as const,
+        role: 'user' as const,
         content: [
           {
-            type: “text” as const,
+            type: 'text' as const,
             text: userText
           },
           {
-            type: “image_url” as const,
+            type: 'image_url' as const,
             image_url: {
-              url: “data:” + mimeType + “;base64,” + base64
+              url: 'data:' + mimeType + ';base64,' + base64
             }
           }
         ]
@@ -198,27 +200,27 @@ function buildMessages({
   }
 
   const systemContent =
-    system + “\nJSON 字段：\n” + ORIGINAL_EXPLANATION_JSON_SHAPE;
+    system + '\nJSON 字段：\n' + ORIGINAL_EXPLANATION_JSON_SHAPE;
 
   const userText =
-    “请识别并解析图片里的题目。只关注题干、公式、图形、表格、选项和答案推导；不要描述截图界面或 OCR 过程。图像摘要：” + (imageSummary || “无”);
+    '请识别并解析图片里的题目。只关注题干、公式、图形、表格、选项和答案推导；不要描述截图界面或 OCR 过程。图像摘要：' + (imageSummary || '无');
 
   return [
     {
-      role: “system” as const,
+      role: 'system' as const,
       content: systemContent
     },
     {
-      role: “user” as const,
+      role: 'user' as const,
       content: [
         {
-          type: “text” as const,
+          type: 'text' as const,
           text: userText
         },
         {
-          type: “image_url” as const,
+          type: 'image_url' as const,
           image_url: {
-            url: “data:” + mimeType + “;base64,” + base64
+            url: 'data:' + mimeType + ';base64,' + base64
           }
         }
       ]
