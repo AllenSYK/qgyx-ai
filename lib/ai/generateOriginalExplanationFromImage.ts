@@ -1,20 +1,16 @@
 import "server-only";
 
 import {
-  ORIGINAL_EXPLANATION_JSON_SHAPE,
   OriginalExplanationSchema,
   type OriginalExplanation
 } from "@/lib/ai/schema";
-import { extractJsonFromText } from "@/lib/ai/extractJson";
 import { robustParseAiJson } from "@/lib/ai/jsonRepair";
 import {
   ImageNotClearError,
   assertUsableOriginalExplanation
 } from "@/lib/ai/originalExplanationQuality";
 import {
-  AiConfigurationError,
   AiTimeoutError,
-  QWEN_VL_MODEL,
   postQwenChatCompletion,
   readAssistantText,
   type ChatMessage
@@ -23,93 +19,42 @@ import { normalizeLanguage, type AppLanguage } from "@/lib/language";
 
 const IMAGE_NOT_CLEAR = "IMAGE_NOT_CLEAR";
 
-function outputLanguageText(language: AppLanguage) {
-  return language === "en" ? "English" : "中文";
-}
-
-function trimText(value: string, maxLength: number) {
-  const text = String(value || "").trim();
-  return text.length > maxLength ? text.slice(0, maxLength) : text;
-}
-
-function normalizeVisionExplanation(value: OriginalExplanation): OriginalExplanation {
-  const knowledgePoints =
-    Array.isArray(value.knowledgePoints) && value.knowledgePoints.length > 0
-      ? value.knowledgePoints
-      : [value.topic].filter(Boolean);
-
-  return {
-    ...value,
-    title: trimText(value.title, 120),
-    detectedText: trimText(value.detectedText, 4000),
-    subject: trimText(value.subject, 40),
-    topic: trimText(value.topic, 60),
-    finalAnswer: trimText(value.finalAnswer, 4000),
-    explanation: trimText(value.explanation, 12000),
-    keySteps: value.keySteps.map((item) => trimText(item, 1200)).filter(Boolean).slice(0, 4),
-    knowledgePoints: knowledgePoints.map((item) => trimText(item, 240)).filter(Boolean).slice(0, 4),
-    commonMistake: trimText(value.commonMistake, 1200),
-    similarIdeas: value.similarIdeas.map((item) => trimText(item, 1200)).filter(Boolean).slice(0, 3)
-  };
-}
-
-function isImageNotClearResponse(rawText: string) {
-  try {
-    const parsed = JSON.parse(extractJsonFromText(rawText)) as { error?: unknown };
-    return parsed?.error === IMAGE_NOT_CLEAR;
-  } catch {
-    return rawText.includes(IMAGE_NOT_CLEAR);
-  }
-}
-
-function createFallback(language: AppLanguage): OriginalExplanation {
-  const marker = language === "en" ? "Unrecognizable question" : "无法识别题目";
-
-  return {
-    title: marker,
-    detectedText: marker,
-    subject: language === "en" ? "General" : "综合",
-    topic: marker,
-    difficulty: "medium",
-    finalAnswer: marker,
-    explanation: marker,
-    keySteps: [marker],
-    knowledgePoints: [marker],
-    commonMistake: marker,
-    similarIdeas: [marker]
-  };
-}
-
-function buildMessages({
-  base64,
-  mimeType,
-  imageSummary,
-  language,
-  retry
-}: {
-  base64: string;
-  mimeType: string;
-  imageSummary?: string;
-  language: AppLanguage;
-  retry: boolean;
-}): ChatMessage[] {
-  const outputLanguage = outputLanguageText(language);
-  const system = retry
-    ? `你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出 Markdown、兜底话术、上传/裁剪建议。复杂题可以完整分步骤解析，不要为了 JSON 而截短关键推导。keySteps<=4，knowledgePoints<=4，similarIdeas<=3，公式用 LaTeX。输出语言：${outputLanguage}。`
-    : `你是拍题解析助手。任务：根据图片生成原题解析。只输出 JSON；看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、请重新上传、请裁剪、无法识别”等兜底话术。复杂题允许完整分步骤解析，不要限制为短答案；keySteps<=4，knowledgePoints<=4，similarIdeas<=3，公式用 $...$ LaTeX。输出语言：${outputLanguage}。`;
-
+function buildMessages(base64: string, mimeType: string): ChatMessage[] {
   return [
     {
       role: "system",
-      content: `${system}\nJSON 字段：\n${ORIGINAL_EXPLANATION_JSON_SHAPE}`
+      content: `
+你是AI解题助手。
+
+必须输出 JSON：
+{
+  "title": "",
+  "detectedText": "",
+  "subject": "",
+  "topic": "",
+  "difficulty": "easy|medium|hard",
+  "finalAnswer": "",
+  "explanation": "",
+  "keySteps": [],
+  "knowledgePoints": [],
+  "commonMistake": "",
+  "similarIdeas": []
+}
+
+禁止输出：
+图片复杂
+根据可见信息
+系统已尝试
+黑边
+截图边框
+请重新上传
+请裁剪
+无法识别
+`
     },
     {
       role: "user",
       content: [
-        {
-          type: "text",
-          text: `请识别并解析图片中的题目。只保留题干、公式、图形标注、表格和选项。图像摘要：${imageSummary || "无"}`
-        },
         {
           type: "image_url",
           image_url: {
@@ -121,79 +66,68 @@ function buildMessages({
   ];
 }
 
-async function requestVisionExplanation(messages: ChatMessage[]) {
-  const data = await postQwenChatCompletion({
-    model: QWEN_VL_MODEL,
-    messages,
-    temperature: 0.06,
-    enable_thinking: false,
-    max_tokens: 6000,
-    timeoutMs: 90000
-  });
-
-  return readAssistantText(data);
-}
-
-async function parseVisionExplanation(rawText: string, fallback: OriginalExplanation) {
-  if (isImageNotClearResponse(rawText)) {
-    throw new ImageNotClearError();
-  }
-
-  const parsed = await robustParseAiJson(rawText, OriginalExplanationSchema, fallback);
-  return assertUsableOriginalExplanation(normalizeVisionExplanation(parsed));
-}
-
 export async function generateOriginalExplanationFromImage({
   base64,
   mimeType,
-  imageSummary,
   language = "zh",
   userId
 }: {
   base64: string;
   mimeType: string;
-  imageSummary?: string;
   language?: AppLanguage;
   userId?: string;
 }): Promise<OriginalExplanation> {
-  const outputLanguage = normalizeLanguage(language);
-  const fallback = createFallback(outputLanguage);
-  let lastError: unknown = null;
+  const lang = normalizeLanguage(language);
 
-  for (const retry of [false, true]) {
-    try {
-      const rawText = await requestVisionExplanation(
-        buildMessages({
-          base64,
-          mimeType,
-          imageSummary,
-          language: outputLanguage,
-          retry
-        })
-      );
+  try {
+    const raw = await postQwenChatCompletion({
+      model: "qwen3-vl-flash",
+      messages: buildMessages(base64, mimeType),
+      temperature: 0.2,
+      max_tokens: 800,
+      timeoutMs: 45000 // 🔥 降低超时避免卡死
+    });
 
-      return await parseVisionExplanation(rawText, fallback);
-    } catch (error) {
-      lastError = error;
+    const text = readAssistantText(raw);
 
-      if (error instanceof AiTimeoutError || error instanceof AiConfigurationError) {
-        throw error;
-      }
+    const parsed = await robustParseAiJson(
+      text,
+      OriginalExplanationSchema,
+      null
+    );
 
-      if (error instanceof ImageNotClearError && retry) {
-        throw error;
-      }
+    const json = assertUsableOriginalExplanation(parsed);
 
-      if (!retry) {
-        continue;
-      }
+    // 🚫 防止AI胡说八道
+    const bad = [
+      "图片复杂",
+      "根据可见信息",
+      "系统已尝试",
+      "黑边",
+      "截图边框",
+      "请重新上传",
+      "无法识别"
+    ];
+
+    const fullText = JSON.stringify(json);
+
+    if (bad.some((k) => fullText.includes(k))) {
+      throw new ImageNotClearError();
     }
+
+    return json;
+
+  } catch (error) {
+    console.error("VL失败", {
+      user_id: userId,
+      error: error instanceof Error ? error.message : "unknown"
+    });
+
+    // ❗ 超时直接抛给 route.ts fallback
+    if (error instanceof AiTimeoutError) {
+      throw error;
+    }
+
+    throw new ImageNotClearError();
   }
-
-  console.error("generate_original_explanation_from_image_failed", {
-    user_id: userId || null,
-    error: lastError instanceof Error ? lastError.message : "unknown"
-  });
-
-  throw new ImageNotClearError();
 }
