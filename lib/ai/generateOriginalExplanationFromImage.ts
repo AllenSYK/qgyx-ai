@@ -15,8 +15,7 @@ import {
   AiConfigurationError,
   AiTimeoutError,
   QWEN_VL_MODEL,
-  postQwenChatCompletion,
-  readAssistantText,
+  collectQwenStreamText,
   type ChatMessage
 } from "@/lib/ai/qwen";
 import { normalizeLanguage, type AppLanguage } from "@/lib/language";
@@ -63,7 +62,7 @@ function isImageNotClearResponse(rawText: string) {
 }
 
 function createFallback(language: AppLanguage): OriginalExplanation {
-  const marker = language === "en" ? "IMAGE_NOT_CLEAR" : "IMAGE_NOT_CLEAR";
+  const marker = IMAGE_NOT_CLEAR;
 
   return {
     title: marker,
@@ -143,16 +142,21 @@ function buildMessages({
 }
 
 async function requestVisionExplanation(messages: ChatMessage[]) {
-  const data = await postQwenChatCompletion({
-    model: QWEN_VL_MODEL || "qwen3-vl-flash",
-    messages,
-    temperature: 0.05,
-    enable_thinking: false,
-    max_tokens: 1800,
-    timeoutMs: 55000
-  });
-
-  return readAssistantText(data);
+  return collectQwenStreamText(
+    {
+      model: QWEN_VL_MODEL || "qwen3-vl-flash",
+      messages,
+      temperature: 0.05,
+      enable_thinking: false,
+      max_tokens: 1800
+    },
+    {
+      // 关键：不要像之前一样 15 秒首 token 超时就杀掉。
+      // Chatbox 类似逻辑：建立流式连接后等待模型输出。
+      firstTokenTimeoutMs: 0,
+      totalTimeoutMs: 180000
+    }
+  );
 }
 
 async function parseVisionExplanation(rawText: string, fallback: OriginalExplanation) {
