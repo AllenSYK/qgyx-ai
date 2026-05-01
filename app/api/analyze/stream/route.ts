@@ -440,7 +440,7 @@ function buildFastVisionMessages({
 - 箭头写成 $\\Rightarrow$
 - 乘号写成 $\\cdot$ 或 $\\times$
 - 导数写成 $\\frac{dy}{dx}$
-- 禁止写成 \\frac${a}{b}
+- 禁止在 \frac 后插入多余的美元符号，例如不要把分式写成破碎的 LaTeX
 - 禁止在公式中插入多余的 $
 - 禁止代码块包公式
 
