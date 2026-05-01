@@ -66,7 +66,7 @@ type GenerationTaskContextValue = {
   updateTask: (patch: Partial<GenerationTaskState>) => void;
 };
 
-const STORAGE_KEY = "qgyx:generation-tasks-v18";
+const STORAGE_KEY = "qgyx:generation-tasks-v19";
 
 const initialTask: GenerationTaskState = {
   id: "",
@@ -605,7 +605,7 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
                           jobStatus: "generating_explanation",
                           progress: typeof item.data.progress === "number" ? item.data.progress : Math.max(taskItem.progress, 55),
                           step: typeof item.data.stage === "string" ? item.data.stage : "正在生成解析...",
-                          analysisText: `${taskItem.analysisText}${text}`
+                          analysisText: taskItem.analysisText
                         }
                       : taskItem
                   )

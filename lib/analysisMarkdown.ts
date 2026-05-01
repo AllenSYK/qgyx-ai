@@ -1,4 +1,4 @@
-import { normalizeLanguage, type AppLanguage } from "@/lib/language";
+﻿import { normalizeLanguage, type AppLanguage } from "@/lib/language";
 
 type SectionKey = "answer" | "explanation" | "knowledge" | "mistakes" | "similar" | "question";
 
@@ -37,6 +37,9 @@ const THOUGHT_MARKERS = [
   "recompute",
   "re-evaluate",
   "self-check",
+  "mistake",
+  "correction",
+  "too messy",
   "chain of thought",
   "internal analysis",
   "thinking process",
@@ -55,7 +58,8 @@ const THOUGHT_MARKERS = [
   "自我检查",
   "思考过程",
   "推理过程",
-  "内部分析"
+  "内部分析",
+  "错误！"
 ];
 
 const FALLBACK_NOISE_MARKERS = [
@@ -77,6 +81,15 @@ const FALLBACK_NOISE_MARKERS = [
   "裁剪黑边"
 ];
 
+const EMPTY_GENERIC_LINES = [
+  "题目解析",
+  "注意审题条件和关键计算步骤。",
+  "识别题干条件。",
+  "确定考查知识点。",
+  "按步骤完成推导。",
+  "核对最终答案。"
+];
+
 function normalizeHeadingLabel(value: string) {
   return value
     .replace(/^[#\s]+/, "")
@@ -94,17 +107,14 @@ export function getAnalysisSectionKeyFromHeading(line: string): SectionKey | nul
   const label = normalizeHeadingLabel(match[1]);
 
   for (const [key, labels] of Object.entries(HEADING_LABELS) as Array<[SectionKey, string[]]>) {
-    if (labels.some((item) => label === item.toLowerCase())) {
-      return key;
-    }
+    if (labels.some((item) => label === item.toLowerCase())) return key;
   }
 
   return null;
 }
 
 function isAllowedMistakeHeading(line: string) {
-  const key = getAnalysisSectionKeyFromHeading(line);
-  return key === "mistakes";
+  return getAnalysisSectionKeyFromHeading(line) === "mistakes";
 }
 
 export function shouldDropAnalysisLine(line: string) {
@@ -115,15 +125,12 @@ export function shouldDropAnalysisLine(line: string) {
 
   const lower = trimmed.toLowerCase();
 
-  if (THOUGHT_MARKERS.some((marker) => lower.includes(marker.toLowerCase()))) {
-    return true;
-  }
+  if (THOUGHT_MARKERS.some((marker) => lower.includes(marker.toLowerCase()))) return true;
+  if (FALLBACK_NOISE_MARKERS.some((marker) => lower.includes(marker.toLowerCase()))) return true;
+  if (EMPTY_GENERIC_LINES.some((marker) => trimmed === marker || trimmed === `- ${marker}`)) return true;
+  if (/\b(my|a|the)\s+mistake\b/i.test(trimmed) || /\bcorrection\b/i.test(trimmed)) return true;
 
-  if (/\b(my|a|the)\s+mistake\b/i.test(trimmed) || /\bcorrection\b/i.test(trimmed)) {
-    return true;
-  }
-
-  return FALLBACK_NOISE_MARKERS.some((marker) => lower.includes(marker.toLowerCase()));
+  return false;
 }
 
 function normalizeHeadingLine(line: string, language?: AppLanguage) {
@@ -153,10 +160,15 @@ export function stripThinkBlocks(input: string) {
     .replace(/<think>[\s\S]*$/gi, "");
 }
 
+function isTopLevelKnownHeading(line: string) {
+  return Boolean(getAnalysisSectionKeyFromHeading(line));
+}
+
 export function cleanAnalysisMarkdown(input: string, language?: AppLanguage) {
   const lines = stripThinkBlocks(input).replace(/\r\n/g, "\n").split("\n");
   const output: string[] = [];
   let skippingQuestionSection = false;
+  let skippingThoughtBlock = false;
 
   for (const line of lines) {
     const key = getAnalysisSectionKeyFromHeading(line);
@@ -171,6 +183,19 @@ export function cleanAnalysisMarkdown(input: string, language?: AppLanguage) {
     }
 
     if (skippingQuestionSection) {
+      continue;
+    }
+
+    if (skippingThoughtBlock) {
+      if (isTopLevelKnownHeading(line)) {
+        skippingThoughtBlock = false;
+      } else {
+        continue;
+      }
+    }
+
+    if (shouldDropAnalysisLine(line)) {
+      skippingThoughtBlock = true;
       continue;
     }
 
