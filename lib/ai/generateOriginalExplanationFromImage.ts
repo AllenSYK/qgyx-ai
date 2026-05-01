@@ -5,13 +5,143 @@ import {
   OriginalExplanationSchema,
   type OriginalExplanation
 } from "@/lib/ai/schema";
+import { extractJsonFromText } from "@/lib/ai/extractJson";
 import { robustParseAiJson } from "@/lib/ai/jsonRepair";
 import {
-  assertUsableOriginalExplanation,
-  UNRECOGNIZABLE_QUESTION_MARKER
+  ImageNotClearError,
+  assertUsableOriginalExplanation
 } from "@/lib/ai/originalExplanationQuality";
-import { postQwenChatCompletion, QWEN_VL_MODEL, readAssistantText, type ChatMessage } from "@/lib/ai/qwen";
-import { languageInstruction, mathOutputInstruction, normalizeLanguage, type AppLanguage } from "@/lib/language";
+import {
+  AiConfigurationError,
+  AiTimeoutError,
+  QWEN_VL_MODEL,
+  postQwenChatCompletion,
+  readAssistantText,
+  type ChatMessage
+} from "@/lib/ai/qwen";
+import { normalizeLanguage, type AppLanguage } from "@/lib/language";
+
+const IMAGE_NOT_CLEAR = "IMAGE_NOT_CLEAR";
+
+function outputLanguageText(language: AppLanguage) {
+  return language === "en" ? "English" : "中文";
+}
+
+function trimText(value: string, maxLength: number) {
+  const text = String(value || "").trim();
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+function normalizeVisionExplanation(value: OriginalExplanation): OriginalExplanation {
+  const knowledgePoints =
+    Array.isArray(value.knowledgePoints) && value.knowledgePoints.length > 0
+      ? value.knowledgePoints
+      : [value.topic].filter(Boolean);
+
+  return {
+    ...value,
+    title: trimText(value.title, 80),
+    detectedText: trimText(value.detectedText, 1200),
+    subject: trimText(value.subject, 40),
+    topic: trimText(value.topic, 60),
+    finalAnswer: trimText(value.finalAnswer, 300),
+    explanation: trimText(value.explanation, 600),
+    keySteps: value.keySteps.map((item) => trimText(item, 120)).filter(Boolean).slice(0, 4),
+    knowledgePoints: knowledgePoints.map((item) => trimText(item, 80)).filter(Boolean).slice(0, 4),
+    commonMistake: trimText(value.commonMistake, 160),
+    similarIdeas: value.similarIdeas.map((item) => trimText(item, 120)).filter(Boolean).slice(0, 3)
+  };
+}
+
+function isImageNotClearResponse(rawText: string) {
+  try {
+    const parsed = JSON.parse(extractJsonFromText(rawText)) as { error?: unknown };
+    return parsed?.error === IMAGE_NOT_CLEAR;
+  } catch {
+    return rawText.includes(IMAGE_NOT_CLEAR);
+  }
+}
+
+function createFallback(language: AppLanguage): OriginalExplanation {
+  const marker = language === "en" ? "Unrecognizable question" : "无法识别题目";
+
+  return {
+    title: marker,
+    detectedText: marker,
+    subject: language === "en" ? "General" : "综合",
+    topic: marker,
+    difficulty: "medium",
+    finalAnswer: marker,
+    explanation: marker,
+    keySteps: [marker],
+    knowledgePoints: [marker],
+    commonMistake: marker,
+    similarIdeas: [marker]
+  };
+}
+
+function buildMessages({
+  base64,
+  mimeType,
+  imageSummary,
+  language,
+  retry
+}: {
+  base64: string;
+  mimeType: string;
+  imageSummary?: string;
+  language: AppLanguage;
+  retry: boolean;
+}): ChatMessage[] {
+  const outputLanguage = outputLanguageText(language);
+  const system = retry
+    ? `你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出 Markdown、兜底话术、上传/裁剪建议。解释不超过 600 中文字，keySteps<=4，knowledgePoints<=4，similarIdeas<=3，公式用 LaTeX。输出语言：${outputLanguage}。`
+    : `你是拍题解析助手。任务：根据图片生成原题解析。只输出 JSON；看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、请重新上传、请裁剪、无法识别”等兜底话术。解释不超过 600 中文字，keySteps<=4，knowledgePoints<=4，similarIdeas<=3，公式用 $...$ LaTeX。输出语言：${outputLanguage}。`;
+
+  return [
+    {
+      role: "system",
+      content: `${system}\nJSON 字段：\n${ORIGINAL_EXPLANATION_JSON_SHAPE}`
+    },
+    {
+      role: "user",
+      content: [
+        {
+          type: "text",
+          text: `请识别并解析图片中的题目。只保留题干、公式、图形标注、表格和选项。图像摘要：${imageSummary || "无"}`
+        },
+        {
+          type: "image_url",
+          image_url: {
+            url: `data:${mimeType};base64,${base64}`
+          }
+        }
+      ]
+    }
+  ];
+}
+
+async function requestVisionExplanation(messages: ChatMessage[]) {
+  const data = await postQwenChatCompletion({
+    model: QWEN_VL_MODEL,
+    messages,
+    temperature: 0.06,
+    enable_thinking: false,
+    max_tokens: 1800,
+    timeoutMs: 45000
+  });
+
+  return readAssistantText(data);
+}
+
+async function parseVisionExplanation(rawText: string, fallback: OriginalExplanation) {
+  if (isImageNotClearResponse(rawText)) {
+    throw new ImageNotClearError();
+  }
+
+  const parsed = await robustParseAiJson(rawText, OriginalExplanationSchema, fallback);
+  return assertUsableOriginalExplanation(normalizeVisionExplanation(parsed));
+}
 
 export async function generateOriginalExplanationFromImage({
   base64,
@@ -27,110 +157,43 @@ export async function generateOriginalExplanationFromImage({
   userId?: string;
 }): Promise<OriginalExplanation> {
   const outputLanguage = normalizeLanguage(language);
+  const fallback = createFallback(outputLanguage);
+  let lastError: unknown = null;
 
-  const messages: ChatMessage[] = [
-    {
-      role: "system",
-      content: `你是一个专业的 AI 视觉学习解析助手。
-你必须直接观察用户上传的整张图片，并完成题目解析。
+  for (const retry of [false, true]) {
+    try {
+      const rawText = await requestVisionExplanation(
+        buildMessages({
+          base64,
+          mimeType,
+          imageSummary,
+          language: outputLanguage,
+          retry
+        })
+      );
 
-最高优先级规则：
-1. 只分析图片里的真实题干、公式、图形、坐标轴、表格、选项和文字。
-2. 静默忽略与题目无关的截图界面元素，不要在答案里提到它们。
-3. 禁止要求用户裁剪或换图。
-4. 禁止在任何字段输出这些兜底废话：图片内容较复杂、根据图片中可见信息、系统已尝试、黑边、浏览器边框或手机截图边框不是题目内容、请重新上传、请裁剪。
-5. 如果无法确定具体题目，所有字段都输出 ${UNRECOGNIZABLE_QUESTION_MARKER}。
-6. 不要把操作建议当成答案。
+      return await parseVisionExplanation(rawText, fallback);
+    } catch (error) {
+      lastError = error;
 
-输出要求：
-1. 只输出 JSON。
-2. 不要 Markdown。
-3. 不要代码块。
-4. 不要输出 JSON 以外的解释文字。
-5. 不要输出 \`\`\`json。
-6. 字符串内双引号必须转义。
-7. LaTeX 反斜杠必须双写，例如 \\\\frac、\\\\sqrt、\\\\pi。
-8. 必须识别题干、公式、选项、图像信息、坐标轴、几何图形或表格文字。
-9. 如果是数学题，必须给出完整解法。
-10. keySteps 最多 8 条。
-11. similarIdeas 最多 6 条，写同类题迁移思路。
-12. 不要生成 Quiz。
-13. 不要生成练习题。
-14. ${languageInstruction(outputLanguage)}
-15. ${mathOutputInstruction}
+      if (error instanceof AiTimeoutError || error instanceof AiConfigurationError) {
+        throw error;
+      }
 
-输出 JSON 格式必须为：
-${ORIGINAL_EXPLANATION_JSON_SHAPE}`
-    },
-    {
-      role: "user",
-      content: [
-        {
-          type: "text",
-          text: `请直接根据图片生成原题解析。
+      if (error instanceof ImageNotClearError && retry) {
+        throw error;
+      }
 
-你必须分析：
-- 题干
-- 公式
-- 图形
-- 选项
-- 坐标轴
-- 表格文字
-
-图像摘要：
-${imageSummary || "请从图片中识别题目本身并完成解析。"}
-
-输出语言：
-${outputLanguage}
-
-用户 ID（仅用于内部追踪，不要写入结果）：
-${userId || "anonymous"}`
-        },
-        {
-          type: "image_url",
-          image_url: {
-            url: `data:${mimeType};base64,${base64}`
-          }
-        }
-      ]
+      if (!retry) {
+        continue;
+      }
     }
-  ];
-
-  const fallback: OriginalExplanation = {
-    title: UNRECOGNIZABLE_QUESTION_MARKER,
-    detectedText: UNRECOGNIZABLE_QUESTION_MARKER,
-    subject: "综合",
-    topic: UNRECOGNIZABLE_QUESTION_MARKER,
-    difficulty: "medium",
-    explanation: UNRECOGNIZABLE_QUESTION_MARKER,
-    keySteps: [UNRECOGNIZABLE_QUESTION_MARKER],
-    finalAnswer: UNRECOGNIZABLE_QUESTION_MARKER,
-    commonMistake: UNRECOGNIZABLE_QUESTION_MARKER,
-    similarIdeas: ["改变条件后沿用同一知识点和解题步骤"]
-  };
-
-  let rawText = "";
-
-  try {
-    const data = await postQwenChatCompletion({
-      model: QWEN_VL_MODEL,
-      messages,
-      temperature: 0.08,
-      enable_thinking: false,
-      max_tokens: 3800,
-      timeoutMs: 30000
-    });
-
-    rawText = readAssistantText(data);
-  } catch (error) {
-    console.error("generate_original_explanation_from_image_failed", {
-      user_id: userId || null,
-      error: error instanceof Error ? error.message : "unknown"
-    });
-
-    throw new Error("AI 视觉解析失败，请稍后重试。");
   }
 
-  const parsed = await robustParseAiJson(rawText, OriginalExplanationSchema, fallback);
-  return assertUsableOriginalExplanation(parsed);
+  console.error("generate_original_explanation_from_image_failed", {
+    user_id: userId || null,
+    error: lastError instanceof Error ? lastError.message : "unknown"
+  });
+
+  throw new ImageNotClearError();
 }

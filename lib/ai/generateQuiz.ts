@@ -6,10 +6,10 @@ import {
   type OriginalExplanation,
   type QuizResult
 } from "@/lib/ai/schema";
-import { robustParseAiJson } from "@/lib/ai/jsonRepair";
+import { assertParsed, parseAndValidateJson } from "@/lib/ai/jsonRepair";
 import { isUsableOriginalExplanation } from "@/lib/ai/originalExplanationQuality";
 import { postQwenChatCompletion, QWEN_QUIZ_MODEL, readAssistantText, type ChatMessage } from "@/lib/ai/qwen";
-import { languageInstruction, mathOutputInstruction, normalizeLanguage, type AppLanguage } from "@/lib/language";
+import { normalizeLanguage, type AppLanguage } from "@/lib/language";
 
 export async function generateQuiz({
   detectedText,
@@ -17,7 +17,7 @@ export async function generateQuiz({
   subject,
   topic,
   difficulty,
-  questionCount = 4,
+  questionCount = 3,
   language = "zh"
 }: {
   detectedText: string;
@@ -32,36 +32,16 @@ export async function generateQuiz({
     throw new Error("缺少真实解析结果，无法生成 Quiz。");
   }
 
-  const safeQuestionCount = Math.min(5, Math.max(3, questionCount));
+  const safeQuestionCount = Math.min(4, Math.max(3, questionCount));
   const outputLanguage = normalizeLanguage(language);
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: `你是一个专业的 AI 学习出题助手。
-请根据原题内容和原题解析，生成用于练习的 Quiz。
-
-要求：
-1. 只输出 JSON
-2. 不要 Markdown
-3. 不要代码块
-4. 不要输出 JSON 以外内容
-4.1 不要输出 \`\`\`json
-4.2 字符串内双引号必须转义
-4.3 LaTeX 反斜杠必须双写，例如 \\frac、\\sqrt
-5. 生成 3-5 道题
-6. 每道题必须有 4 个选项
-7. correctAnswer 只能是 A/B/C/D
-8. 只生成题目，不生成解析
-9. 不要包含 explanation
-10. 不要包含 detailedExplanation
-11. 题目必须围绕原题知识点进行变式训练
-12. 适合学生练习
-13. 禁止基于“图片内容较复杂”“根据图片中可见信息”“系统已尝试”等兜底内容出题
-14. 如果原题解析不是具体题目，停止并不要编造题目
-15. ${languageInstruction(outputLanguage)}
-16. ${mathOutputInstruction}
-
-输出 JSON 格式必须为：
+      content: `你是 Quiz 出题助手。只输出 JSON，不要 Markdown，不要解析。
+生成 ${safeQuestionCount} 道围绕原题知识点的变式选择题，每题 4 个选项，correctAnswer 只能是 A/B/C/D。
+不要包含 explanation 或 detailedExplanation。禁止基于兜底话术出题，不编造不存在的原题。
+公式用 $...$ LaTeX。输出语言：${outputLanguage === "en" ? "English" : "中文"}。
+JSON 格式：
 ${QUIZ_JSON_SHAPE}`
     },
     {
@@ -69,10 +49,18 @@ ${QUIZ_JSON_SHAPE}`
       content: `请生成 ${safeQuestionCount} 道 Quiz。
 
 原题内容：
-${detectedText}
+${detectedText.slice(0, 1200)}
 
 原题解析：
-${JSON.stringify(originalExplanation, null, 2)}
+${JSON.stringify({
+  title: originalExplanation.title,
+  subject: originalExplanation.subject,
+  topic: originalExplanation.topic,
+  difficulty: originalExplanation.difficulty,
+  finalAnswer: originalExplanation.finalAnswer,
+  keySteps: originalExplanation.keySteps,
+  knowledgePoints: originalExplanation.knowledgePoints
+}, null, 2)}
 
 学科：${subject || originalExplanation.subject}
 知识点：${topic || originalExplanation.topic}
@@ -80,18 +68,6 @@ ${JSON.stringify(originalExplanation, null, 2)}
 输出语言：${outputLanguage}`
     }
   ];
-
-  const fallbackQuestions = Array.from({ length: 3 }, (_, index) => ({
-    id: `fallback-${index + 1}`,
-    question: `围绕“${topic || originalExplanation.topic || "核心知识点"}”的基础练习题 ${index + 1}。`,
-    options: ["A", "B", "C", "D"],
-    correctAnswer: "A" as const,
-    topic: topic || originalExplanation.topic || "核心知识点",
-    difficulty: difficulty || originalExplanation.difficulty || "medium"
-  }));
-  const fallback: QuizResult = {
-    questions: fallbackQuestions
-  };
 
   let rawText = "";
 
@@ -101,8 +77,8 @@ ${JSON.stringify(originalExplanation, null, 2)}
       messages,
       temperature: 0.25,
       enable_thinking: false,
-      max_tokens: 4500,
-      timeoutMs: 25000
+      max_tokens: 2200,
+      timeoutMs: 30000
     });
     rawText = readAssistantText(data);
   } catch (error) {
@@ -110,8 +86,9 @@ ${JSON.stringify(originalExplanation, null, 2)}
       topic: topic || originalExplanation.topic,
       error: error instanceof Error ? error.message : "unknown"
     });
-    return fallback;
+    throw new Error(error instanceof Error ? error.message : "Quiz 生成失败。");
   }
 
-  return robustParseAiJson(rawText, QuizResultSchema, fallback);
+  const parsed = await parseAndValidateJson(rawText, QuizResultSchema, QUIZ_JSON_SHAPE);
+  return assertParsed(parsed);
 }

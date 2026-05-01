@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { AppLanguage } from "@/lib/language";
+import { compressImageForUpload } from "@/lib/image-compress";
 import type { AnalysisResult, Quiz, StudyMode, WrongQuestion } from "@/types/quiz";
 
 type FileMeta = {
@@ -181,6 +182,7 @@ function applyServerPayload(task: GenerationTaskState, payload: Record<string, u
   const progress = typeof payload.progress === "number" ? payload.progress : task.progress;
   const analysis = (payload.analysis as AnalysisResult | null) || task.analysis;
   const quiz = (payload.quiz as Quiz | null) || task.quiz;
+  const quizFailedAfterAnalysis = jobStatus === "failed" && Boolean(analysis) && !quiz;
 
   return {
     ...task,
@@ -189,7 +191,9 @@ function applyServerPayload(task: GenerationTaskState, payload: Record<string, u
     jobStatus,
     status: statusToLocalStatus(jobStatus),
     progress,
-    step: statusText(jobStatus, typeof payload.stage === "string" ? payload.stage : null),
+    step: quizFailedAfterAnalysis
+      ? "Quiz 生成失败，可重试"
+      : statusText(jobStatus, typeof payload.stage === "string" ? payload.stage : null),
     error: typeof payload.errorMessage === "string" ? payload.errorMessage : "",
     imageUrl: typeof payload.imageUrl === "string" ? payload.imageUrl : task.imageUrl,
     originalExplanation: payload.originalExplanation ?? task.originalExplanation,
@@ -404,17 +408,6 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
         return;
       }
 
-      if (kind === "image" && file.size > 5 * 1024 * 1024) {
-        updateTaskById(taskId, {
-          status: "error",
-          jobStatus: "failed",
-          progress: 0,
-          step: "图片过大",
-          error: "图片不能超过 5MB。"
-        });
-        return;
-      }
-
       if (kind === "pdf" && file.size > 10 * 1024 * 1024) {
         updateTaskById(taskId, {
           status: "error",
@@ -426,8 +419,32 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
         return;
       }
 
+      let uploadFile = file;
+
+      if (kind === "image") {
+        if (file.size >= 1024 * 1024) {
+          updateTaskById(taskId, {
+            progress: 14,
+            step: "正在压缩图片"
+          });
+        }
+
+        uploadFile = await compressImageForUpload(file);
+
+        if (uploadFile.size > 5 * 1024 * 1024) {
+          updateTaskById(taskId, {
+            status: "error",
+            jobStatus: "failed",
+            progress: 0,
+            step: "图片过大",
+            error: "图片压缩后仍超过 5MB，请上传更清晰、裁剪后的题目图片。"
+          });
+          return;
+        }
+      }
+
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", uploadFile);
       formData.append("mode", mode);
       formData.append("language", language);
 

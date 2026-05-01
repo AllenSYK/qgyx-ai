@@ -40,7 +40,7 @@ async function continueQuizGeneration(jobId: string, userId: string) {
       subject: originalExplanation.subject,
       topic: originalExplanation.topic,
       difficulty: originalExplanation.difficulty,
-      questionCount: 4,
+      questionCount: 3,
       language: normalizeLanguage(job.language)
     });
 
@@ -50,7 +50,7 @@ async function continueQuizGeneration(jobId: string, userId: string) {
     });
   } catch (error) {
     await updateJobStatus(admin, jobId, "failed", {
-      error_message: error instanceof Error ? error.message : "Quiz 后台生成失败。"
+      error_message: `Quiz 生成失败，可重试：${error instanceof Error ? error.message : "后台生成失败。"}`
     });
   }
 }
@@ -87,7 +87,9 @@ export async function GET(request: Request) {
     }
 
     if (data.status === "explanation_done" && data.original_explanation && !data.quiz_result) {
-      await updateJobStatus(admin, jobId, "generating_quiz");
+      await updateJobStatus(admin, jobId, "generating_quiz", {
+        stage: "Quiz 正在后台生成"
+      });
       const allowance = await getGenerationAllowance(admin, user.id);
       after(() => {
         void continueQuizGeneration(jobId, user.id);
@@ -99,7 +101,7 @@ export async function GET(request: Request) {
             ...data,
             status: "generating_quiz",
             progress: 85,
-            stage: "正在生成练习题"
+            stage: "Quiz 正在后台生成"
           }),
           ...createGenerationAllowancePayload(allowance)
         }

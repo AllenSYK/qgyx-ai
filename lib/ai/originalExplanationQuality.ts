@@ -5,9 +5,16 @@ import type { OriginalExplanation } from "@/lib/ai/schema";
 export const UNRECOGNIZABLE_QUESTION_MARKER = "UNRECOGNIZABLE_QUESTION";
 
 const BAD_FINAL_RESPONSE_PATTERN =
-  /图片内容较复杂|根据图片中可见信息|根据可见信息|系统已尝试|黑边、浏览器边框或手机截图边框不是题目内容|请重新上传|请裁剪|裁剪黑边|题目区域识别失败|识别失败|更聚焦的题目图片/;
+  /图片内容较复杂|根据图片中可见信息|根据可见信息|系统已尝试|黑边|浏览器边框|手机截图边框|请重新上传|请裁剪|裁剪黑边|题目区域识别失败|识别失败|更聚焦的题目图片/;
 
 const UNRECOGNIZED_PATTERN = /无法识别|未能识别|未识别到题目|题目识别不完整|UNRECOGNIZABLE_QUESTION/;
+
+export class ImageNotClearError extends Error {
+  constructor(message = "图片未能识别出明确题目，请上传更清晰的题目截图。") {
+    super(message);
+    this.name = "ImageNotClearError";
+  }
+}
 
 export function containsBadFinalResponseText(...values: unknown[]) {
   return BAD_FINAL_RESPONSE_PATTERN.test(
@@ -26,11 +33,16 @@ export function normalizeOriginalExplanationShape(explanation: OriginalExplanati
     Array.isArray(explanation.similarIdeas) && explanation.similarIdeas.length > 0
       ? explanation.similarIdeas
       : keySteps.slice(0, 4);
+  const knowledgePoints =
+    Array.isArray(explanation.knowledgePoints) && explanation.knowledgePoints.length > 0
+      ? explanation.knowledgePoints
+      : [explanation.topic].filter(Boolean);
 
   return {
     ...explanation,
-    keySteps,
-    similarIdeas
+    keySteps: keySteps.slice(0, 4),
+    knowledgePoints: knowledgePoints.slice(0, 4),
+    similarIdeas: similarIdeas.slice(0, 3)
   };
 }
 
@@ -45,6 +57,7 @@ export function isUsableOriginalExplanation(explanation: OriginalExplanation | n
     normalized.detectedText,
     normalized.subject,
     normalized.topic,
+    normalized.knowledgePoints,
     normalized.explanation,
     normalized.finalAnswer,
     normalized.commonMistake,

@@ -11,10 +11,11 @@ export const OriginalExplanationSchema = z
     topic: z.string().min(1),
     difficulty: DifficultySchema,
     explanation: z.string().min(1),
-    keySteps: z.array(z.string().min(1)).min(1).max(8),
+    keySteps: z.array(z.string().min(1)).min(1).max(4),
+    knowledgePoints: z.array(z.string().min(1)).min(1).max(4).optional(),
     finalAnswer: z.string().min(1),
     commonMistake: z.string().min(1),
-    similarIdeas: z.array(z.string().min(1)).min(1).max(6)
+    similarIdeas: z.array(z.string().min(1)).min(1).max(3)
   })
   .strict();
 
@@ -31,7 +32,7 @@ export const QuizQuestionSchema = z
 
 export const QuizResultSchema = z
   .object({
-    questions: z.array(QuizQuestionSchema).min(3).max(10)
+    questions: z.array(QuizQuestionSchema).min(3).max(4)
   })
   .strict();
 
@@ -66,9 +67,10 @@ export const ORIGINAL_EXPLANATION_JSON_SHAPE = `{
   "subject": "",
   "topic": "",
   "difficulty": "easy|medium|hard",
+  "finalAnswer": "",
   "explanation": "",
   "keySteps": [],
-  "finalAnswer": "",
+  "knowledgePoints": [],
   "commonMistake": "",
   "similarIdeas": []
 }`;

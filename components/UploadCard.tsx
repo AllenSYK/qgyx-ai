@@ -147,6 +147,9 @@ export default function UploadCard({
 
   const fileKind = useMemo(() => getFileKind(file), [file]);
   const selectedMode = modeOptions.find((option) => option.value === studyMode);
+  const taskUsesQuiz = task.mode === "quiz" || task.mode === "quiz_analysis";
+  const quizPending = Boolean(task.analysis && taskUsesQuiz && !task.quiz && task.status === "running");
+  const quizFailed = Boolean(task.analysis && taskUsesQuiz && !task.quiz && task.status === "error");
 
   const remainingCredits = allowance.remainingCredits;
   const dailyRemaining = allowance.dailyRemaining;
@@ -391,7 +394,7 @@ export default function UploadCard({
             <span className="text-lg font-semibold text-slate-950">
               {file ? file.name : task.file?.name || "选择图片或 PDF"}
             </span>
-            <span className="mt-2 text-sm text-slate-500">JPG、PNG、WEBP 最大 5MB；PDF 最大 10MB</span>
+            <span className="mt-2 text-sm text-slate-500">JPG、PNG、WEBP 上传前自动压缩；PDF 最大 10MB</span>
           </label>
 
           <div className="flex flex-col rounded-[24px] border border-slate-200 bg-slate-50 p-4">
@@ -560,7 +563,13 @@ export default function UploadCard({
                                 : "bg-blue-50 text-blue-700"
                           )}
                         >
-                          {item.jobStatus === "completed" ? "已完成" : item.status === "error" ? "失败" : "生成中"}
+                          {item.jobStatus === "completed"
+                            ? "已完成"
+                            : item.status === "error" && item.analysis && !item.quiz
+                              ? "Quiz 失败"
+                              : item.status === "error"
+                                ? "失败"
+                                : "生成中"}
                         </span>
                         <span className="text-xs text-slate-500">
                           {item.createdAt ? new Date(item.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : ""}
@@ -714,6 +723,50 @@ export default function UploadCard({
             })
           }
         />
+      ) : null}
+
+      {quizPending ? (
+        <section className="rounded-[28px] border border-blue-100 bg-white/95 p-5 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur sm:p-7">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
+                <Sparkles className="h-4 w-4" />
+                Quiz 正在后台生成
+              </div>
+              <div className="mt-3 text-sm leading-6 text-slate-600">原题解析已可查看，练习题生成完成后会自动显示。</div>
+            </div>
+            <div className="text-xl font-semibold text-blue-700">{task.progress}%</div>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${task.progress}%` }} />
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-4">
+            <LoadingSkeleton className="h-4" />
+            <LoadingSkeleton className="h-4" />
+            <LoadingSkeleton className="h-4" />
+            <LoadingSkeleton className="h-4" />
+          </div>
+        </section>
+      ) : null}
+
+      {quizFailed ? (
+        <section className="rounded-[28px] border border-amber-200 bg-amber-50 p-5 text-amber-900 shadow-sm sm:p-7">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="font-semibold">Quiz 生成失败，可重试</div>
+              <div className="mt-1 text-sm leading-6">{task.error || "原题解析已保留，重新生成 Quiz 不会清空当前解析。"}</div>
+            </div>
+            <button
+              type="button"
+              disabled={!task.jobId}
+              onClick={() => void retryJob(task.jobId)}
+              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-600 px-4 py-3 text-sm font-semibold text-white transition duration-200 ease-out hover:bg-amber-700 active:scale-[0.97] active:opacity-75 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RotateCcw className="h-4 w-4" />
+              重新生成 Quiz
+            </button>
+          </div>
+        </section>
       ) : null}
 
       {task.wrongQuestions.length > 0 ? (

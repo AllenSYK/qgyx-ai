@@ -17,6 +17,8 @@ import { normalizeLanguage } from "@/lib/language";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
+  let retryJobId = "";
+
   try {
     const { user } = await getCurrentUser();
 
@@ -35,6 +37,7 @@ export async function POST(request: Request) {
       return apiError("缺少 jobId。");
     }
 
+    retryJobId = body.jobId;
     const admin = createSupabaseAdminClient();
     const { data: job, error } = await admin
       .from("analysis_jobs")
@@ -104,7 +107,7 @@ export async function POST(request: Request) {
         subject: nextOriginal.subject,
         topic: nextOriginal.topic,
         difficulty: nextOriginal.difficulty,
-        questionCount: 4,
+        questionCount: 3,
         language
       });
     }
@@ -139,6 +142,14 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "重试任务失败。";
+
+    if (retryJobId) {
+      const admin = createSupabaseAdminClient();
+      await updateJobStatus(admin, retryJobId, "failed", {
+        error_message: message.includes("Quiz") ? message : `Quiz 生成失败，可重试：${message}`
+      }).catch(() => undefined);
+    }
+
     return apiError(message, 500);
   }
 }

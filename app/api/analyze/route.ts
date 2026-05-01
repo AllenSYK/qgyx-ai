@@ -17,13 +17,18 @@ import { generateOriginalExplanation } from "@/lib/ai/generateOriginalExplanatio
 import { generateOriginalExplanationFromImage } from "@/lib/ai/generateOriginalExplanationFromImage";
 import { generateQuiz } from "@/lib/ai/generateQuiz";
 import {
+  ImageNotClearError,
   assertUsableOriginalExplanation,
-  containsBadFinalResponseText,
   isUsableOriginalExplanation,
   normalizeOriginalExplanationShape
 } from "@/lib/ai/originalExplanationQuality";
 import { recognizeQuestionContent } from "@/lib/ai/recognizeQuestionContent";
-import { consumeLastAiUsage, getQwenModelName } from "@/lib/ai/qwen";
+import {
+  AiConfigurationError,
+  AiTimeoutError,
+  consumeLastAiUsage,
+  getQwenModelName
+} from "@/lib/ai/qwen";
 import type { OriginalExplanation, QuizResult } from "@/lib/ai/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { extractPdfText } from "@/lib/pdf";
@@ -40,7 +45,18 @@ import type { Quiz, StudyMode } from "@/types/quiz";
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const MAX_PDF_SIZE = 10 * 1024 * 1024;
+const FALLBACK_TEXT_MIN_LENGTH = 30;
 const studyModes: StudyMode[] = ["quiz", "analysis", "quiz_analysis"];
+
+class AnalyzeRouteError extends Error {
+  status: number;
+
+  constructor(message: string, status = 422) {
+    super(message);
+    this.name = "AnalyzeRouteError";
+    this.status = status;
+  }
+}
 
 function normalizeMode(value: FormDataEntryValue | null): StudyMode {
   if (typeof value !== "string") {
@@ -63,52 +79,8 @@ function createTextHash(text: string) {
   return crypto.createHash("sha256").update(text.replace(/\s+/g, "").trim()).digest("hex");
 }
 
-function shouldUseVisionOriginalExplanation(detectedText: string) {
-  const normalized = String(detectedText || "").replace(/\s+/g, "");
-
-  if (normalized.length < 30) {
-    return true;
-  }
-
-  return [
-    "题目识别不完整",
-    "题目识别内容暂不完整",
-    "无法识别",
-    "图片内容较复杂",
-    "根据图片中可见信息",
-    "系统已尝试",
-    "请重新上传",
-    "请裁剪",
-    "裁剪黑边",
-    "题目区域识别失败",
-    "识别失败",
-    "更聚焦的题目图片"
-  ].some((keyword) => normalized.includes(keyword));
-}
-
-function containsBadRecognitionText(...values: unknown[]) {
-  return containsBadFinalResponseText(...values);
-}
-
-function sanitizeOriginalExplanation(originalExplanation: OriginalExplanation) {
-  const badRecognitionText = containsBadRecognitionText(
-    originalExplanation.title,
-    originalExplanation.detectedText,
-    originalExplanation.explanation,
-    originalExplanation.finalAnswer,
-    originalExplanation.commonMistake,
-    originalExplanation.keySteps,
-    originalExplanation.similarIdeas
-  );
-
-  if (badRecognitionText) {
-    throw new Error("无法识别图片中的具体题目，请提供更清晰、完整的题目图片。");
-  }
-
-  return {
-    originalExplanation: assertUsableOriginalExplanation(originalExplanation),
-    badRecognitionText: false
-  };
+function compactTextLength(text: string) {
+  return String(text || "").replace(/\s+/g, "").length;
 }
 
 async function uploadToStorage({
@@ -127,12 +99,12 @@ async function uploadToStorage({
   sourceType: Quiz["sourceType"];
 }) {
   const bucket = process.env.SUPABASE_UPLOAD_BUCKET || "uploads";
-  const extension = getFileExtension(file, sourceType === "pdf" ? "pdf" : "png");
+  const extension = getFileExtension(file, sourceType === "pdf" ? "pdf" : "jpg");
   const objectPath = `${userId}/${Date.now()}-${imageHash.slice(0, 16)}.${extension}`;
 
   try {
     const { error } = await admin.storage.from(bucket).upload(objectPath, buffer, {
-      contentType: file.type || (sourceType === "pdf" ? "application/pdf" : "image/png"),
+      contentType: file.type || (sourceType === "pdf" ? "application/pdf" : "image/jpeg"),
       upsert: false
     });
 
@@ -368,23 +340,21 @@ async function generateQuizForJob({
       throw new Error("缺少原题解析，无法继续生成 Quiz。");
     }
 
-    const safeDetectedText =
-      detectedText ||
-      originalExplanation.detectedText;
-
-    if (!safeDetectedText.trim()) {
+    if (!detectedText.trim()) {
       throw new Error("缺少真实题干，无法继续生成 Quiz。");
     }
 
-    await updateJobStatus(admin, jobId, "generating_quiz");
+    await updateJobStatus(admin, jobId, "generating_quiz", {
+      error_message: null
+    });
 
     const quizResult = await generateQuiz({
-      detectedText: safeDetectedText,
+      detectedText,
       originalExplanation,
       subject: originalExplanation.subject,
       topic: originalExplanation.topic,
       difficulty: originalExplanation.difficulty,
-      questionCount: 4,
+      questionCount: 3,
       language
     });
 
@@ -411,7 +381,8 @@ async function generateQuizForJob({
       })
     ]);
   } catch (error) {
-    const message = await markJobFailed(admin, jobId, error);
+    const message = error instanceof Error ? error.message : "Quiz 后台生成失败。";
+    await markJobFailed(admin, jobId, new Error(`Quiz 生成失败，可重试：${message}`));
     await writeUsageLog({
       admin,
       userId,
@@ -470,8 +441,239 @@ async function updateJobAndReturn(
   return data;
 }
 
+async function findCachedOriginal({
+  admin,
+  hashColumn,
+  hash,
+  language
+}: {
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+  hashColumn: "image_hash" | "ocr_hash";
+  hash: string;
+  language: AppLanguage;
+}) {
+  if (!hash) {
+    return null;
+  }
+
+  const { data, error } = await admin
+    .from("analysis_jobs")
+    .select("detected_text,original_explanation,quiz_result,image_url")
+    .eq(hashColumn, hash)
+    .eq("language", language)
+    .eq("status", "completed")
+    .not("original_explanation", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const original = data?.original_explanation
+    ? normalizeOriginalExplanationShape(data.original_explanation as OriginalExplanation)
+    : null;
+
+  if (!original || !isUsableOriginalExplanation(original)) {
+    return null;
+  }
+
+  return {
+    detectedText: String(data?.detected_text || original.detectedText || ""),
+    imageUrl: (data?.image_url as string | null | undefined) || null,
+    original,
+    quizResult: (data?.quiz_result as QuizResult | null | undefined) || null
+  };
+}
+
+function cachedStatusForMode(mode: StudyMode, quizResult: QuizResult | null): AnalysisJobStatus {
+  if (mode === "analysis" || quizResult) {
+    return "completed";
+  }
+
+  return "explanation_done";
+}
+
+async function createCachedJobResponse({
+  admin,
+  userId,
+  mode,
+  language,
+  allowance,
+  existingJobId,
+  imageHash,
+  ocrHash,
+  imageUrl,
+  cached
+}: {
+  admin: ReturnType<typeof createSupabaseAdminClient>;
+  userId: string;
+  mode: StudyMode;
+  language: AppLanguage;
+  allowance: Awaited<ReturnType<typeof getGenerationAllowance>>;
+  existingJobId?: string | null;
+  imageHash?: string;
+  ocrHash?: string;
+  imageUrl?: string | null;
+  cached: {
+    detectedText: string;
+    imageUrl: string | null;
+    original: OriginalExplanation;
+    quizResult: QuizResult | null;
+  };
+}) {
+  const quizResult = mode === "analysis" ? null : cached.quizResult;
+  const status = cachedStatusForMode(mode, quizResult);
+  const patch = {
+    language,
+    image_url: imageUrl || cached.imageUrl || null,
+    image_hash: imageHash || null,
+    ocr_hash: ocrHash || null,
+    detected_text: cached.detectedText,
+    original_explanation: cached.original,
+    quiz_result: quizResult,
+    quiz_answers: {},
+    wrong_explanations: {},
+    error_message: null
+  };
+  const row = existingJobId
+    ? await updateJobAndReturn(admin, existingJobId, status, patch)
+    : await createJob(admin, {
+        user_id: userId,
+        status,
+        progress: JOB_PROGRESS[status],
+        stage: JOB_STAGE_TEXT[status],
+        ...patch
+      });
+
+  if (mode !== "analysis" && !quizResult) {
+    scheduleBackground(() =>
+      generateQuizForJob({
+        admin,
+        jobId: row.id as string,
+        userId,
+        mode,
+        language
+      })
+    );
+  }
+
+  return apiSuccess({
+    jobId: row.id,
+    status,
+    progress: JOB_PROGRESS[status],
+    stage: status === "explanation_done" ? "原题解析已完成，Quiz 正在后台生成" : JOB_STAGE_TEXT[status],
+    language,
+    cached: true,
+    imageUrl: imageUrl || cached.imageUrl || null,
+    ...createGenerationAllowancePayload(allowance),
+    originalExplanation: cached.original,
+    analysis: originalExplanationToAnalysisResult(cached.original),
+    quizResult,
+    quiz: quizResult ? quizResultToLegacyQuiz(quizResult, cached.original) : null
+  });
+}
+
+function sanitizeOriginalExplanation(originalExplanation: OriginalExplanation) {
+  return assertUsableOriginalExplanation(originalExplanation);
+}
+
+async function generateImageOriginalWithFallback({
+  base64,
+  mimeType,
+  imageSummary,
+  userId,
+  language
+}: {
+  base64: string;
+  mimeType: string;
+  imageSummary: string;
+  userId: string;
+  language: AppLanguage;
+}) {
+  try {
+    return {
+      originalExplanation: await generateOriginalExplanationFromImage({
+        base64,
+        mimeType,
+        imageSummary,
+        userId,
+        language
+      }),
+      detectedText: "",
+      ocrHash: "",
+      fallbackImageSummary: ""
+    };
+  } catch (error) {
+    if (!(error instanceof AiTimeoutError)) {
+      throw error;
+    }
+
+    const recognition = await recognizeQuestionContent({
+      base64,
+      mimeType,
+      language
+    });
+    const detectedText = recognition.detectedText || "";
+
+    if (compactTextLength(detectedText) < FALLBACK_TEXT_MIN_LENGTH) {
+      throw new AnalyzeRouteError("图片识别超时，请上传更清晰、裁剪后的题目图片。", 422);
+    }
+
+    return {
+      originalExplanation: null,
+      detectedText,
+      ocrHash: createTextHash(detectedText),
+      fallbackImageSummary: recognition.imageSummary || "Qwen VL 超时后提取到的题目文字。"
+    };
+  }
+}
+
+function toHttpError(error: unknown) {
+  if (error instanceof AnalyzeRouteError) {
+    return {
+      message: error.message,
+      status: error.status
+    };
+  }
+
+  if (error instanceof ImageNotClearError) {
+    return {
+      message: "图片未能识别出明确题目，请上传更清晰的题目截图。",
+      status: 422
+    };
+  }
+
+  if (error instanceof AiConfigurationError) {
+    return {
+      message: error.message,
+      status: 503
+    };
+  }
+
+  if (error instanceof AiTimeoutError) {
+    return {
+      message: "AI 请求超时，请稍后重试或上传更清晰的题目图片。",
+      status: 503
+    };
+  }
+
+  const message = error instanceof Error ? error.message : "AI 生成失败，请重试。";
+  const status =
+    /无法识别|未能识别|识别超时|图片|题目内容|PDF/.test(message)
+      ? 422
+      : /DeepSeek|Qwen|AI 服务|超时|配置/.test(message)
+        ? 503
+        : 500;
+
+  return { message, status };
+}
+
 export async function POST(request: Request) {
   let jobId: string | null = null;
+  let modeForLog: StudyMode = "quiz_analysis";
+  let userIdForLog: string | null = null;
 
   try {
     const { user } = await getCurrentUser();
@@ -480,11 +682,14 @@ export async function POST(request: Request) {
       return apiError("请先登录后再上传题目。", 401);
     }
 
+    userIdForLog = user.id;
+
     const admin = createSupabaseAdminClient();
     const formData = await request.formData();
     const mode = normalizeMode(formData.get("mode"));
     const language = normalizeLanguage(formData.get("language"));
     const upload = formData.get("file") || formData.get("image");
+    modeForLog = mode;
 
     if (!upload || typeof upload === "string") {
       return apiError("请上传题目图片或 PDF 文件。");
@@ -499,7 +704,7 @@ export async function POST(request: Request) {
     }
 
     if (isImage && file.size > MAX_IMAGE_SIZE) {
-      return apiError("图片不能超过 5MB。");
+      return apiError("图片不能超过 5MB，请先压缩后再上传。");
     }
 
     if (isPdf && file.size > MAX_PDF_SIZE) {
@@ -512,10 +717,33 @@ export async function POST(request: Request) {
       return apiError("账户状态异常，请联系客服处理。微信：15155132939", 403);
     }
 
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const imageHash = createHash(buffer);
+    const sourceType: Quiz["sourceType"] = isPdf ? "pdf" : "image";
+
+    const cachedByImageHash = await findCachedOriginal({
+      admin,
+      hashColumn: "image_hash",
+      hash: imageHash,
+      language
+    });
+
+    if (cachedByImageHash) {
+      return createCachedJobResponse({
+        admin,
+        userId: user.id,
+        mode,
+        language,
+        allowance,
+        imageHash,
+        cached: cachedByImageHash
+      });
+    }
+
     if (!allowance.allowed) {
       const reason =
         allowance.monthlyRemaining === 0
-                    ? "本月生成额度已用完，请下月再试或联系管理员处理。"
+          ? "本月生成额度已用完，请下月再试或联系管理员处理。"
           : allowance.dailyRemaining <= 0
             ? "今日会员额度已用完，请明天再试或升级会员。"
             : "剩余生成次数不足，请联系管理员充值或开通会员。";
@@ -524,9 +752,6 @@ export async function POST(request: Request) {
 
     await applySoftLimitDelay(allowance.speedMode);
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const imageHash = createHash(buffer);
-    const sourceType: Quiz["sourceType"] = isPdf ? "pdf" : "image";
     const imageUrl = await uploadToStorage({
       admin,
       userId: user.id,
@@ -535,54 +760,6 @@ export async function POST(request: Request) {
       imageHash,
       sourceType
     });
-
-    const { data: cached } = await admin
-      .from("analysis_jobs")
-      .select("detected_text,original_explanation,quiz_result,image_url")
-      .eq("image_hash", imageHash)
-      .eq("language", language)
-      .eq("status", "completed")
-      .not("original_explanation", "is", null)
-      .not("quiz_result", "is", null)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const cachedOriginal = cached?.original_explanation
-      ? normalizeOriginalExplanationShape(cached.original_explanation as OriginalExplanation)
-      : null;
-
-    if (cachedOriginal && cached?.quiz_result && isUsableOriginalExplanation(cachedOriginal)) {
-      const cachedJob = await createJob(admin, {
-        user_id: user.id,
-        status: "completed",
-        progress: 100,
-        stage: JOB_STAGE_TEXT.completed,
-        language,
-        image_url: imageUrl || cached.image_url || null,
-        image_hash: imageHash,
-        detected_text: cached.detected_text || null,
-        original_explanation: cachedOriginal,
-        quiz_result: cached.quiz_result,
-        quiz_answers: {},
-        wrong_explanations: {},
-        error_message: null
-      });
-
-      return apiSuccess({
-        jobId: cachedJob.id,
-        status: "completed",
-        progress: 100,
-        stage: JOB_STAGE_TEXT.completed,
-        language,
-        cached: true,
-        ...createGenerationAllowancePayload(allowance),
-        originalExplanation: cachedOriginal,
-        analysis: originalExplanationToAnalysisResult(cachedOriginal),
-        quizResult: cached.quiz_result as QuizResult,
-        quiz: quizResultToLegacyQuiz(cached.quiz_result as QuizResult, cachedOriginal)
-      });
-    }
 
     const created = await createJob(admin, {
       user_id: user.id,
@@ -600,121 +777,127 @@ export async function POST(request: Request) {
 
     let detectedText = "";
     let imageSummary = "";
-    let imageBase64 = "";
-    const imageMimeType = file.type || "image/png";
-
-    await updateJobStatus(admin, jobId, "ocr_processing");
+    let ocrHash = "";
+    let originalExplanationRaw: OriginalExplanation;
+    const imageMimeType = file.type || "image/jpeg";
 
     if (isPdf) {
+      await updateJobStatus(admin, jobId, "ocr_processing");
       detectedText = await extractPdfText(buffer);
       imageSummary = "用户上传的是文本型 PDF。";
 
-      if (detectedText.replace(/\s/g, "").length < 80) {
-        throw new Error("这个 PDF 可能是扫描版或图片型文档，当前版本无法稳定提取文字。请截图题目后以图片上传。");
+      if (compactTextLength(detectedText) < 80) {
+        throw new AnalyzeRouteError("这个 PDF 可能是扫描版或图片型文档，当前版本无法稳定提取文字。请截图题目后以图片上传。", 422);
       }
-    } else {
-      imageBase64 = buffer.toString("base64");
-      const recognition = await recognizeQuestionContent({
-        base64: imageBase64,
-        mimeType: imageMimeType,
+
+      ocrHash = createTextHash(detectedText);
+      const cachedByOcr = await findCachedOriginal({
+        admin,
+        hashColumn: "ocr_hash",
+        hash: ocrHash,
         language
       });
 
-      detectedText = recognition.detectedText || "";
-      imageSummary =
-        recognition.imageSummary ||
-        "OCR 未稳定读取到完整题干，将直接使用视觉解析模型识别题目。";
-    }
+      if (cachedByOcr) {
+        return createCachedJobResponse({
+          admin,
+          userId: user.id,
+          mode,
+          language,
+          allowance,
+          existingJobId: jobId,
+          imageHash,
+          ocrHash,
+          imageUrl,
+          cached: cachedByOcr
+        });
+      }
 
-    const ocrHash = !isImage && detectedText && !shouldUseVisionOriginalExplanation(detectedText)
-      ? createTextHash(detectedText)
-      : "";
+      await updateJobStatus(admin, jobId, "generating_explanation", {
+        detected_text: detectedText,
+        ocr_hash: ocrHash
+      });
 
-    if (ocrHash) {
-      const { data: cachedByOcr } = await admin
-        .from("analysis_jobs")
-        .select("detected_text,original_explanation,quiz_result,image_url")
-        .eq("ocr_hash", ocrHash)
-        .eq("language", language)
-        .eq("status", "completed")
-        .not("original_explanation", "is", null)
-        .not("quiz_result", "is", null)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      originalExplanationRaw = await generateOriginalExplanation({
+        detectedText,
+        imageSummary,
+        userId: user.id,
+        language
+      });
+    } else {
+      await updateJobStatus(admin, jobId, "generating_explanation");
+      const imageBase64 = buffer.toString("base64");
+      const generated = await generateImageOriginalWithFallback({
+        base64: imageBase64,
+        mimeType: imageMimeType,
+        imageSummary,
+        userId: user.id,
+        language
+      });
 
-      const cachedByOcrOriginal = cachedByOcr?.original_explanation
-        ? normalizeOriginalExplanationShape(cachedByOcr.original_explanation as OriginalExplanation)
-        : null;
+      detectedText = generated.detectedText;
+      ocrHash = generated.ocrHash;
 
-      if (cachedByOcrOriginal && cachedByOcr?.quiz_result && isUsableOriginalExplanation(cachedByOcrOriginal)) {
-        const row = await updateJobAndReturn(admin, jobId, "completed", {
-          image_hash: imageHash,
-          ocr_hash: ocrHash,
-          detected_text: cachedByOcr.detected_text || detectedText,
-          original_explanation: cachedByOcrOriginal,
-          quiz_result: cachedByOcr.quiz_result,
-          quiz_answers: {},
-          wrong_explanations: {},
-          error_message: null
+      if (ocrHash) {
+        const cachedByOcr = await findCachedOriginal({
+          admin,
+          hashColumn: "ocr_hash",
+          hash: ocrHash,
+          language
         });
 
-        return apiSuccess({
-          jobId,
-          status: row.status,
-          progress: row.progress,
-          stage: row.stage,
-          language,
-          cached: true,
-          imageUrl: imageUrl || cachedByOcr.image_url || null,
-          ...createGenerationAllowancePayload(allowance),
-          originalExplanation: cachedByOcrOriginal,
-          analysis: originalExplanationToAnalysisResult(cachedByOcrOriginal),
-          quizResult: cachedByOcr.quiz_result as QuizResult,
-          quiz: quizResultToLegacyQuiz(cachedByOcr.quiz_result as QuizResult, cachedByOcrOriginal)
+        if (cachedByOcr) {
+          return createCachedJobResponse({
+            admin,
+            userId: user.id,
+            mode,
+            language,
+            allowance,
+            existingJobId: jobId,
+            imageHash,
+            ocrHash,
+            imageUrl,
+            cached: cachedByOcr
+          });
+        }
+      }
+
+      if (generated.originalExplanation) {
+        originalExplanationRaw = generated.originalExplanation;
+      } else {
+        await updateJobStatus(admin, jobId, "generating_explanation", {
+          detected_text: detectedText,
+          ocr_hash: ocrHash
+        });
+
+        originalExplanationRaw = await generateOriginalExplanation({
+          detectedText,
+          imageSummary: generated.fallbackImageSummary,
+          userId: user.id,
+          language
         });
       }
     }
 
-    await updateJobStatus(admin, jobId, "generating_explanation", {
-      detected_text: detectedText,
-      ...(ocrHash ? { ocr_hash: ocrHash } : {})
-    });
-
-    const useVisionOriginalExplanation = isImage;
-    const originalExplanationRaw =
-      useVisionOriginalExplanation
-        ? await generateOriginalExplanationFromImage({
-            base64: imageBase64 || buffer.toString("base64"),
-            mimeType: imageMimeType,
-            imageSummary,
-            userId: user.id,
-            language
-          })
-        : await generateOriginalExplanation({
-            detectedText,
-            imageSummary,
-            userId: user.id,
-            language
-          });
-
-    const {
-      originalExplanation,
-      badRecognitionText
-    } = sanitizeOriginalExplanation(originalExplanationRaw);
-
-    const effectiveDetectedText =
-      useVisionOriginalExplanation && originalExplanation.detectedText && !badRecognitionText
-        ? originalExplanation.detectedText
-        : detectedText || originalExplanation.detectedText;
-
+    const originalExplanation = sanitizeOriginalExplanation(originalExplanationRaw);
+    const effectiveDetectedText = detectedText || originalExplanation.detectedText;
     const effectiveOcrHash = effectiveDetectedText ? createTextHash(effectiveDetectedText) : ocrHash;
-
-    const row = await updateJobAndReturn(admin, jobId, mode === "analysis" ? "completed" : "explanation_done", {
+    const nextStatus: AnalysisJobStatus = mode === "analysis" ? "completed" : "explanation_done";
+    const row = await updateJobAndReturn(admin, jobId, nextStatus, {
       detected_text: effectiveDetectedText,
       ...(effectiveOcrHash ? { ocr_hash: effectiveOcrHash } : {}),
       original_explanation: originalExplanation,
       error_message: null
+    });
+
+    await writeUsageLog({
+      admin,
+      userId: user.id,
+      jobId,
+      mode,
+      action: "original_explanation",
+      status: "success",
+      request
     });
 
     const [remainingCredits, analysisRecordResult] = await Promise.allSettled([
@@ -743,16 +926,6 @@ export async function POST(request: Request) {
       })
     ]);
 
-    await writeUsageLog({
-      admin,
-      userId: user.id,
-      jobId,
-      mode,
-      action: "original_explanation",
-      status: "success",
-      request
-    });
-
     const refreshedAllowance = await getGenerationAllowance(admin, user.id).catch(() => ({
       ...allowance,
       creditsRemaining:
@@ -760,14 +933,22 @@ export async function POST(request: Request) {
     }));
 
     if (mode !== "analysis") {
-      scheduleBackground(() => generateQuizForJob({ admin, jobId: jobId as string, userId: user.id, mode, language }));
+      scheduleBackground(() =>
+        generateQuizForJob({
+          admin,
+          jobId: jobId as string,
+          userId: user.id,
+          mode,
+          language
+        })
+      );
     }
 
     return apiSuccess({
       jobId,
       status: row.status,
       progress: row.progress,
-      stage: row.stage,
+      stage: mode === "analysis" ? row.stage : "原题解析已完成，Quiz 正在后台生成",
       language,
       cached: false,
       imageUrl,
@@ -781,24 +962,22 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const admin = createSupabaseAdminClient();
-    const message = await markJobFailed(admin, jobId, error);
+    const { message, status } = toHttpError(error);
+    await markJobFailed(admin, jobId, new Error(message));
 
-    if (jobId) {
-      const { user } = await getCurrentUser();
-      if (user) {
-        await writeUsageLog({
-          admin,
-          userId: user.id,
-          jobId,
-          mode: "quiz_analysis",
-          action: "analyze",
-          status: "failed",
-          errorMessage: message,
-          request
-        });
-      }
+    if (jobId && userIdForLog) {
+      await writeUsageLog({
+        admin,
+        userId: userIdForLog,
+        jobId,
+        mode: modeForLog,
+        action: "analyze",
+        status: "failed",
+        errorMessage: message,
+        request
+      });
     }
 
-    return apiError(message || "AI 生成失败，请重试。", 500);
+    return apiError(message || "AI 生成失败，请重试。", status);
   }
 }

@@ -10,8 +10,15 @@ import {
   assertUsableOriginalExplanation,
   UNRECOGNIZABLE_QUESTION_MARKER
 } from "@/lib/ai/originalExplanationQuality";
-import { postQwenChatCompletion, QWEN_TEXT_MODEL, readAssistantText, type ChatMessage } from "@/lib/ai/qwen";
-import { languageInstruction, mathOutputInstruction, normalizeLanguage, type AppLanguage } from "@/lib/language";
+import {
+  AiConfigurationError,
+  AiTimeoutError,
+  QWEN_TEXT_MODEL,
+  postQwenChatCompletion,
+  readAssistantText,
+  type ChatMessage
+} from "@/lib/ai/qwen";
+import { normalizeLanguage, type AppLanguage } from "@/lib/language";
 
 export async function generateOriginalExplanation({
   detectedText,
@@ -36,29 +43,12 @@ export async function generateOriginalExplanation({
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: `你是一个专业的 AI 学习解析助手。
-请根据用户上传图片识别出的题目内容，生成“原题解析”。
-
-要求：
-1. 只输出 JSON
-2. 不要 Markdown
-3. 不要代码块
-4. 不要输出 JSON 以外的解释文字
-4.1 不要输出 \`\`\`json
-4.2 字符串内双引号必须转义
-4.3 LaTeX 反斜杠必须双写，例如 \\frac、\\sqrt
-5. 不要生成 Quiz
-6. 不要生成练习题
-7. explanation 要完整清楚
-8. keySteps 用数组列出解题步骤
-9. similarIdeas 用数组列出同类题解法迁移思路
-10. 必须围绕真实题干、公式、图形或选项解析，不要编造题目
-11. 禁止在任何字段输出这些兜底废话：图片内容较复杂、根据图片中可见信息、系统已尝试、黑边、浏览器边框或手机截图边框不是题目内容、请重新上传、请裁剪
-12. 如果无法从输入中确定具体题目，所有字段都输出 ${UNRECOGNIZABLE_QUESTION_MARKER}
-13. ${languageInstruction(outputLanguage)}
-14. ${mathOutputInstruction}
-
-输出 JSON 格式必须为：
+      content: `你是题目解析助手。只根据输入的真实题干生成原题解析，只输出 JSON。
+要求：不输出 Markdown；不生成 Quiz；不编造题目；explanation 不超过 600 中文字；keySteps<=4；knowledgePoints<=4；similarIdeas<=3；公式用 $...$ LaTeX。
+禁止输出兜底话术：图片内容较复杂、根据图片中可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别。
+如果输入不足以确定具体题目，所有字段输出 ${UNRECOGNIZABLE_QUESTION_MARKER}。
+输出语言：${outputLanguage === "en" ? "English" : "中文"}。
+JSON 格式：
 ${ORIGINAL_EXPLANATION_JSON_SHAPE}`
     },
     {
@@ -90,6 +80,7 @@ ${userId || "anonymous"}`
     keySteps: [UNRECOGNIZABLE_QUESTION_MARKER],
     finalAnswer: UNRECOGNIZABLE_QUESTION_MARKER,
     commonMistake: UNRECOGNIZABLE_QUESTION_MARKER,
+    knowledgePoints: [UNRECOGNIZABLE_QUESTION_MARKER],
     similarIdeas: ["改变条件后沿用同一知识点和解题步骤"]
   };
 
@@ -101,8 +92,8 @@ ${userId || "anonymous"}`
       messages,
       temperature: 0.18,
       enable_thinking: false,
-      max_tokens: 3500,
-      timeoutMs: 20000
+      max_tokens: 1800,
+      timeoutMs: 30000
     });
     rawText = readAssistantText(data);
   } catch (error) {
@@ -110,7 +101,12 @@ ${userId || "anonymous"}`
       user_id: userId || null,
       error: error instanceof Error ? error.message : "unknown"
     });
-    throw new Error("AI 解析失败，请稍后重试。");
+
+    if (error instanceof AiTimeoutError || error instanceof AiConfigurationError) {
+      throw error;
+    }
+
+    throw new Error("DeepSeek 文本解析失败，请稍后重试。");
   }
 
   const parsed = await robustParseAiJson(

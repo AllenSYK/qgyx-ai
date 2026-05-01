@@ -104,9 +104,10 @@ export function repairJson(raw: string) {
 }
 
 const ARRAY_FIELD_LIMITS = {
-  keySteps: 8,
-  similarIdeas: 6,
-  questions: 10,
+  keySteps: 4,
+  knowledgePoints: 4,
+  similarIdeas: 3,
+  questions: 4,
   options: 4,
   commonMistakes: 6,
   suggestions: 6
@@ -175,6 +176,11 @@ function normalizeAiJsonValue(value: unknown): unknown {
 
     if (key === "keySteps") {
       normalized[key] = normalizeStringArray(item, ARRAY_FIELD_LIMITS.keySteps);
+      continue;
+    }
+
+    if (key === "knowledgePoints") {
+      normalized[key] = normalizeStringArray(item, ARRAY_FIELD_LIMITS.knowledgePoints);
       continue;
     }
 
@@ -357,7 +363,8 @@ ${raw}`
     ],
     temperature: 0.1,
     enable_thinking: false,
-    max_tokens: 2200
+    max_tokens: 2200,
+    timeoutMs: 30000
   });
 
   return readAssistantText(data);

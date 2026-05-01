@@ -56,12 +56,16 @@ export function originalExplanationToAnalysisResult(explanation: OriginalExplana
   const similarIdeas = Array.isArray(explanation.similarIdeas) && explanation.similarIdeas.length > 0
     ? explanation.similarIdeas
     : explanation.keySteps;
+  const knowledgePoints =
+    Array.isArray(explanation.knowledgePoints) && explanation.knowledgePoints.length > 0
+      ? explanation.knowledgePoints
+      : [explanation.topic].filter(Boolean);
 
   return {
     recognizedText: explanation.detectedText,
     answer: explanation.finalAnswer,
     explanation: explanation.explanation,
-    knowledgePoints: [explanation.topic].filter(Boolean),
+    knowledgePoints,
     commonMistakes: [explanation.commonMistake].filter(Boolean),
     similarIdeas,
     subject: explanation.subject,
