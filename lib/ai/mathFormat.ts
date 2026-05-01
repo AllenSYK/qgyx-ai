@@ -1,0 +1,57 @@
+import type {
+  OriginalExplanation,
+  QuizQuestion,
+  QuizResult,
+  WrongExplanation
+} from "@/lib/ai/schema";
+import { normalizeLatexText } from "@/lib/latex";
+
+function cleanText(value: string) {
+  return normalizeLatexText(value);
+}
+
+function cleanTextArray(value: string[] | undefined) {
+  return value?.map(cleanText);
+}
+
+export function cleanOriginalExplanationMath(value: OriginalExplanation): OriginalExplanation {
+  return {
+    ...value,
+    title: cleanText(value.title),
+    detectedText: cleanText(value.detectedText),
+    subject: cleanText(value.subject),
+    topic: cleanText(value.topic),
+    explanation: cleanText(value.explanation),
+    keySteps: value.keySteps.map(cleanText),
+    knowledgePoints: cleanTextArray(value.knowledgePoints),
+    finalAnswer: cleanText(value.finalAnswer),
+    commonMistake: cleanText(value.commonMistake),
+    similarIdeas: value.similarIdeas.map(cleanText)
+  };
+}
+
+export function cleanQuizQuestionMath(value: QuizQuestion): QuizQuestion {
+  return {
+    ...value,
+    question: cleanText(value.question),
+    options: value.options.map(cleanText),
+    topic: cleanText(value.topic)
+  };
+}
+
+export function cleanQuizResultMath(value: QuizResult): QuizResult {
+  return {
+    ...value,
+    questions: value.questions.map(cleanQuizQuestionMath)
+  };
+}
+
+export function cleanWrongExplanationMath(value: WrongExplanation): WrongExplanation {
+  return {
+    ...value,
+    whyWrong: cleanText(value.whyWrong),
+    explanation: cleanText(value.explanation),
+    correctMethod: cleanText(value.correctMethod),
+    similarTip: cleanText(value.similarTip)
+  };
+}

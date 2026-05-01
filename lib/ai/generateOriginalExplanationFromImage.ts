@@ -7,6 +7,7 @@ import {
 } from "@/lib/ai/schema";
 import { extractJsonFromText } from "@/lib/ai/extractJson";
 import { robustParseAiJson } from "@/lib/ai/jsonRepair";
+import { cleanOriginalExplanationMath } from "@/lib/ai/mathFormat";
 import {
   ImageNotClearError,
   assertUsableOriginalExplanation
@@ -168,7 +169,7 @@ async function parseVisionExplanation(rawText: string, fallback: OriginalExplana
   }
 
   const parsed = await robustParseAiJson(rawText, OriginalExplanationSchema, fallback);
-  const normalized = normalizeVisionExplanation(parsed);
+  const normalized = cleanOriginalExplanationMath(normalizeVisionExplanation(parsed));
 
   if (containsBadFallbackText(normalized)) {
     throw new ImageNotClearError();

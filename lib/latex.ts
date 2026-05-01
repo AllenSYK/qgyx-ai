@@ -76,9 +76,12 @@ function hasMathSignal(value: string) {
   if (!text) return false;
   if (hasLatexCommand(text)) return true;
   if (/\\[A-Za-z]+/.test(text)) return true;
-  if (/[=^_<>+\-*/]||||||⇒/.test(text) && /[A-Za-z0-9]/.test(text)) return true;
+  if (/[=^_<>+\-*/≤≥≠≈→⇒]/.test(text) && /[A-Za-z0-9π]/.test(text)) return true;
   if (/\b\d+\s*\/\s*\d+\b/.test(text)) return true;
-  if (/\b[A-Za-z]{1,3}\s*\/\s*[A-Za-z]{1,3}\b/.test(text)) return true;
+  if (/(?:\b[A-Za-z]{1,3}\b|π)\s*\/\s*(?:\b[A-Za-z0-9]{1,8}\b|π)/.test(text)) return true;
+  if (/(?:根号|√)\s*[A-Za-z0-9π]+/.test(text)) return true;
+  if (/[A-Za-zπ]\s*(?:的)?(?:平方|立方|[0-9一二三四五六七八九十]+次方)/.test(text)) return true;
+  if (/点\s*[A-Za-z]\s*坐标\s*[（(]/.test(text)) return true;
   return false;
 }
 
@@ -99,16 +102,69 @@ function isProse(value: string) {
   return false;
 }
 
+function toLatexAtom(value: string) {
+  const clean = value.trim();
+  return clean === "π" ? "\\pi" : clean;
+}
+
+function normalizeExponent(value: string) {
+  const clean = value.replace(/[{}]/g, "").trim();
+  const map: Record<string, string> = {
+    一: "1",
+    二: "2",
+    三: "3",
+    四: "4",
+    五: "5",
+    六: "6",
+    七: "7",
+    八: "8",
+    九: "9",
+    十: "10"
+  };
+
+  return map[clean] || clean;
+}
+
+function normalizeFormulaSyntax(input: string) {
+  return String(input || "")
+    .replace(/(^|[^\w\\])((?:\\pi|[A-Za-zπ]|\d{1,8})\s*\/\s*(?:\\pi|[A-Za-z0-9π]+|\d{1,8}))/g, (_match, prefix: string, fraction: string) => `${prefix}${convertSimpleFraction(fraction)}`)
+    .replace(/π/g, "\\pi")
+    .replace(/(^|[^\\A-Za-z])pi\b/gi, (_match, prefix: string) => `${prefix}\\pi`)
+    .replace(/(\\[A-Za-z]+|[A-Za-z])\s*\^\s*\{?([0-9A-Za-z+\-]+)\}?/g, (_match, base: string, exponent: string) => `${base}^{${normalizeExponent(exponent)}}`);
+}
+
 function shouldKeepMath(value: string) {
-  const clean = repairBrokenSyntax(value).trim();
+  const clean = normalizeFormulaSyntax(repairBrokenSyntax(value).trim());
   return Boolean(clean && hasMathSignal(clean) && !isProse(clean));
 }
 
 function wrapMath(value: string) {
-  const clean = repairBrokenSyntax(value).trim();
+  const clean = normalizeFormulaSyntax(repairBrokenSyntax(value).trim());
   if (!clean || !shouldKeepMath(clean)) return clean;
   if (clean.startsWith("$") && clean.endsWith("$")) return clean;
   return `$${clean}$`;
+}
+
+function convertSimpleFraction(match: string) {
+  const [left, right] = match.split("/").map((part) => part.trim());
+  if (!left || !right) return match;
+  return `\\frac{${toLatexAtom(left)}}{${toLatexAtom(right)}}`;
+}
+
+function convertVerbalMath(input: string) {
+  return input
+    .replace(/点\s*([A-Za-z])\s*坐标\s*[（(]\s*([-+]?\d+(?:\.\d+)?)\s*[,，]\s*([-+]?\d+(?:\.\d+)?)\s*[）)]/g, (_match, point: string, x: string, y: string) =>
+      `${point}\\left(${x},${y}\\right)`
+    )
+    .replace(/([A-Za-zπ])\s*(?:的)?([0-9一二三四五六七八九十]+)次方/g, (_match, base: string, exponent: string) =>
+      `${toLatexAtom(base)}^{${normalizeExponent(exponent)}}`
+    )
+    .replace(/([A-Za-zπ])\s*(?:的)?平方/g, (_match, base: string) => `${toLatexAtom(base)}^{2}`)
+    .replace(/([A-Za-zπ])\s*(?:的)?立方/g, (_match, base: string) => `${toLatexAtom(base)}^{3}`)
+    .replace(/(?:根号|√)\s*([A-Za-z0-9π]+)/g, (_match, radicand: string) => `\\sqrt{${toLatexAtom(radicand)}}`)
+    .replace(/([A-Za-z0-9π]+)\s*除以\s*([A-Za-z0-9π]+)/g, (_match, left: string, right: string) =>
+      `\\frac{${toLatexAtom(left)}}{${toLatexAtom(right)}}`
+    );
 }
 
 function splitMathSegments(input: string): Segment[] {
@@ -149,14 +205,14 @@ function splitMathSegments(input: string): Segment[] {
 
 function normalizeExistingMath(segment: string) {
   if (segment.startsWith("$$") && segment.endsWith("$$")) {
-    const fixed = repairBrokenSyntax(segment.slice(2, -2)).trim();
+    const fixed = normalizeFormulaSyntax(repairBrokenSyntax(segment.slice(2, -2)).trim());
     if (!fixed) return "";
     if (!shouldKeepMath(fixed)) return fixed;
     return `$$${fixed}$$`;
   }
 
   if (segment.startsWith("$") && segment.endsWith("$")) {
-    const fixed = repairBrokenSyntax(segment.slice(1, -1)).trim();
+    const fixed = normalizeFormulaSyntax(repairBrokenSyntax(segment.slice(1, -1)).trim());
     if (!fixed) return "";
     if (!shouldKeepMath(fixed)) return fixed;
     return `$${fixed}$`;
@@ -166,10 +222,10 @@ function normalizeExistingMath(segment: string) {
 }
 
 function wrapBareMathInText(input: string) {
-  let next = input;
+  let next = convertVerbalMath(input);
 
   next = next.replace(
-    /(\\frac\{[^{}\n]+\}\{[^{}\n]+\}|\\sqrt\{[^{}\n]+\}|\\boxed\{[^{}\n]+\}|\\left\.?\s*[^，。；;\n]{1,160}?\\right\.?\|?|\\angle\s*[A-Za-z0-9]+)/g,
+    /(\\frac\{[^{}\n]+\}\{[^{}\n]+\}|\\sqrt\{[^{}\n]+\}|\\boxed\{[^{}\n]+\}|[A-Za-z]?\\left\s*[\(\[\{.]?[^，。；;\n]{1,160}?\\right\s*[\)\]\}.|]?|\\angle\s*[A-Za-z0-9]+)/g,
     (match) => wrapMath(match)
   );
 
@@ -183,12 +239,17 @@ function wrapBareMathInText(input: string) {
   );
 
   next = next.replace(
-    /(^|[\s（(，。；、])([A-Za-z]\^[{]?[0-9A-Za-z+\-]+[}]?)/g,
+    /(^|[^A-Za-z0-9\\$])([A-Za-z]\^[{]?[0-9A-Za-z+\-]+[}]?)/g,
     (_match, prefix: string, formula: string) => `${prefix}${wrapMath(formula)}`
   );
 
   next = next.replace(
-    /(^|[\s（(，。；、])([A-Za-z][ \t]*=[ \t]*[A-Za-z0-9\\{}^_+\-*/(). \t]{1,80})/g,
+    /(^|[^A-Za-z0-9\\$])(\d{1,8}\s*\/\s*\d{1,8}|(?:\\pi|[A-Za-zπ])\s*\/\s*(?:\\pi|[A-Za-z0-9π]+))/g,
+    (_match, prefix: string, formula: string) => `${prefix}${wrapMath(convertSimpleFraction(formula))}`
+  );
+
+  next = next.replace(
+    /(^|[^A-Za-z0-9\\$])([A-Za-z][ \t]*=[ \t]*[A-Za-z0-9\\{}^_+\-*/(). \t]{1,80})/g,
     (_match, prefix: string, formula: string) => `${prefix}${wrapMath(formula)}`
   );
 

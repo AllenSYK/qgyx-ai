@@ -6,6 +6,7 @@ import {
   type OriginalExplanation
 } from "@/lib/ai/schema";
 import { robustParseAiJson } from "@/lib/ai/jsonRepair";
+import { cleanOriginalExplanationMath } from "@/lib/ai/mathFormat";
 import {
   assertUsableOriginalExplanation,
   UNRECOGNIZABLE_QUESTION_MARKER
@@ -119,5 +120,5 @@ ${userId || "anonymous"}`
     fallback
   );
 
-  return assertUsableOriginalExplanation(parsed);
+  return assertUsableOriginalExplanation(cleanOriginalExplanationMath(parsed));
 }

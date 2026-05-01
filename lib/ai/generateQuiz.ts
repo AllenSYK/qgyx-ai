@@ -7,6 +7,7 @@ import {
   type QuizResult
 } from "@/lib/ai/schema";
 import { assertParsed, parseAndValidateJson } from "@/lib/ai/jsonRepair";
+import { cleanQuizResultMath } from "@/lib/ai/mathFormat";
 import { isUsableOriginalExplanation } from "@/lib/ai/originalExplanationQuality";
 import { postQwenChatCompletion, QWEN_QUIZ_MODEL, readAssistantText, type ChatMessage } from "@/lib/ai/qwen";
 import { mathOutputInstruction, normalizeLanguage, type AppLanguage } from "@/lib/language";
@@ -98,5 +99,5 @@ ${JSON.stringify({
   }
 
   const parsed = await parseAndValidateJson(rawText, QuizResultSchema, QUIZ_JSON_SHAPE);
-  return assertParsed(parsed);
+  return cleanQuizResultMath(assertParsed(parsed));
 }

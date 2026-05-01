@@ -8,6 +8,7 @@ import {
   type WrongExplanation
 } from "@/lib/ai/schema";
 import { robustParseAiJson } from "@/lib/ai/jsonRepair";
+import { cleanWrongExplanationMath } from "@/lib/ai/mathFormat";
 import { postQwenChatCompletion, QWEN_TEXT_MODEL, readAssistantText, type ChatMessage } from "@/lib/ai/qwen";
 import { languageInstruction, mathOutputInstruction, normalizeLanguage, type AppLanguage } from "@/lib/language";
 
@@ -106,9 +107,11 @@ ${JSON.stringify(originalExplanation, null, 2)}
     return fallback;
   }
 
-  return robustParseAiJson(
+  const parsed = await robustParseAiJson(
     rawText,
     WrongExplanationSchema,
     fallback
   );
+
+  return cleanWrongExplanationMath(parsed);
 }
