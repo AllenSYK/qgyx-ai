@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
@@ -21,7 +21,7 @@ export default function MarkdownRenderer({ text, className, as = "div" }: Markdo
     <Wrapper className={clsx("markdown-renderer math-text break-words", inline ? "inline" : "whitespace-pre-wrap", className)}>
       <ReactMarkdown
         remarkPlugins={[remarkMath]}
-        rehypePlugins={[[rehypeKatex, { strict: "ignore", throwOnError: false }]]}
+        rehypePlugins={[[rehypeKatex, { strict: "ignore", throwOnError: false, errorColor: "#1f2937" }]]}
         components={{
           p: ({ children }) =>
             inline ? <span>{children}</span> : <p className="mb-3 last:mb-0">{children}</p>,
