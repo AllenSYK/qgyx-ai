@@ -71,7 +71,7 @@ export async function POST(request: Request) {
       difficulty: item.difficulty === "easy" || item.difficulty === "hard" ? item.difficulty : "medium",
       explanation: String(item.explanation || item.error_reason || "围绕本题错因进行相似训练。"),
       keySteps: [
-        `错因：${item.error_type || "审题不清"}`,
+        '错因：' + (item.error_type || '审题不清'),
         "先复盘原题条件",
         "再做同知识点变式题"
       ],
@@ -81,7 +81,10 @@ export async function POST(request: Request) {
         "先定位原题考查的知识点",
         "把已知条件替换成同类型条件",
         "沿用正确解题步骤完成新题"
-      ]
+      ],
+      steps: [],
+      formulas: [],
+      warnings: []
     };
 
     const quizResult = await generateQuiz({
