@@ -72,7 +72,7 @@ ${mathOutputInstruction}`
 1. 只输出 JSON。
 1.1 不要输出 Markdown、代码块或 \`\`\`json。
 1.2 字符串内双引号必须转义，LaTeX 反斜杠必须双写。
-2. detectedText 尽量保留题干、条件、选项、图表文字和关键公式。
+2. detectedText 尽量保留题干、条件、选项、图表文字和关键公式；识别到的数学内容要直接整理成 LaTeX，不要改写成口语化描述。
 3. imageSummary 只描述与解题有关的图像信息。
 4. ${languageInstruction(outputLanguage)}
 5. ${mathOutputInstruction}

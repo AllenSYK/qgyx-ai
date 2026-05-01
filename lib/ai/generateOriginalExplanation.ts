@@ -18,7 +18,7 @@ import {
   readAssistantText,
   type ChatMessage
 } from "@/lib/ai/qwen";
-import { normalizeLanguage, type AppLanguage } from "@/lib/language";
+import { mathOutputInstruction, normalizeLanguage, type AppLanguage } from "@/lib/language";
 
 export async function generateOriginalExplanation({
   detectedText,
@@ -48,7 +48,8 @@ export async function generateOriginalExplanation({
 禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、内部分析、自我检查、自我纠错、<think> 标签。
 禁止输出兜底话术：图片内容较复杂、根据图片中可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别。
 不要把知识点写成“题目解析”，不要把易错点写成泛泛的“注意审题条件和关键计算步骤”。
-公式必须使用 KaTeX 可渲染 LaTeX：行内公式 $...$，分式 $\\frac{a}{b}$，根号 $\\sqrt{x}$，幂次 $x^2$；不要把普通文字放进 $...$。
+所有输出要像考试试卷：detectedText、finalAnswer、explanation、keySteps、commonMistake、knowledgePoints、similarIdeas 中凡是可以用数学形式表达的内容，都必须写成标准数学形式。
+${mathOutputInstruction}
 如果输入不足以确定具体题目，所有字段输出 ${UNRECOGNIZABLE_QUESTION_MARKER}。
 输出语言：${outputLanguage === "en" ? "English" : "中文"}。
 JSON 格式：

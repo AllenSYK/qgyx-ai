@@ -65,7 +65,8 @@ export async function generateWrongExplanation({
 10. 不要输出 Thinking、Reasoning、Chain of Thought、内部分析、自我纠错、<think> 标签
 11. ${languageInstruction(outputLanguage)}
 12. ${mathOutputInstruction}
-13. 内容要短，每个字段 1-2 句
+13. whyWrong、explanation、correctMethod、similarTip 中能写成公式或标准数学符号的内容必须写成数学形式。
+14. 内容要短，每个字段 1-2 句
 
 输出 JSON 格式必须为：
 ${WRONG_EXPLANATION_JSON_SHAPE}`

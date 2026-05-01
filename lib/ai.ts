@@ -4,6 +4,7 @@ import { z } from "zod";
 import { robustParseAiJson } from "@/lib/ai/jsonRepair";
 import type { AnalysisResult, ErrorType, Quiz, QuizQuestion, ReviewResult, WrongQuestion } from "@/types/quiz";
 import { fixLatex } from "@/lib/latex";
+import { mathOutputInstruction } from "@/lib/language";
 
 export { fixLatex, normalizeLatexText } from "@/lib/latex";
 
@@ -424,8 +425,9 @@ async function repairQuizWithQwen(raw: string, sourceType: Quiz["sourceType"]): 
 4. difficulty 只能是 easy / medium / hard。
 5. options 里不要带 A/B/C/D 前缀。
 6. 数学表达式必须用 LaTeX，并且包在 $...$ 里。
-7. 分数必须写成 "$\\\\frac{16}{18}$"，不能写 16/18。
-8. 只输出 JSON。
+7. ${quizFormatRules}
+8. 分数必须写成 "$\\\\frac{16}{18}$"，不能写 16/18。
+9. 只输出 JSON。
 
 待修复内容：
 ${raw}`
@@ -449,17 +451,12 @@ async function parseQuizWithRepair(raw: string, sourceType: Quiz["sourceType"]) 
 }
 
 const quizFormatRules = `数学格式要求：
-1. 数学内容必须使用 LaTeX 排版，不要使用普通键盘格式。
-1.1 行内公式必须使用 $...$，块级公式必须使用 $$...$$。
-1.2 不允许输出裸露的 \\frac、\\sqrt、x^2 或 $$ 残片。
-2. 分数必须写成 LaTeX 分式，例如不要写 16/18，要写 "$\\\\frac{16}{18}$"。
-3. 根号必须写成 "$\\\\sqrt{2}$"。
-4. 指数必须写成 "$x^2$" 或 "$e^{-2}$"。
-5. 积分必须写成 "$\\\\int_0^1 x^2\\\\,dx$"。
-6. options 数组中每个元素必须是独立字符串，不能拼接。
-7. options 不要带 A: / B: / C: / D: 前缀。
-8. 选项如果是数学表达式，必须包在 $...$ 中。
-9. 正确示例：
+1. 题干、解析和选项要像考试试卷，凡是可以用数学形式表达的内容都写成标准数学符号。
+2. ${mathOutputInstruction}
+3. options 数组中每个元素必须是独立字符串，不能拼接。
+4. options 不要带 A: / B: / C: / D: 前缀。
+5. 选项如果是数学表达式，必须包在 $...$ 中，且尽量只保留数学式。
+6. 正确示例：
 "options": ["$S_2=\\\\pi(e^2-e^{-2})$", "$S_2=\\\\frac{\\\\pi}{2}(e^2-e^{-2})$", "$S_2=2\\\\pi(e-e^{-1})$", "$S_2=\\\\pi(e-e^{-1})^2$"]`;
 
 export async function generateQuizFromImageWithQwen({
@@ -689,7 +686,8 @@ async function repairAnalysisWithQwen(raw: string): Promise<AnalysisResult> {
 3. 不要完整抄题，recognizedText 只保留题干摘要。
 4. explanation 控制在 300 字以内。
 5. 所有数学表达式必须用 $...$ 包裹，例如 $x=\\cosh t+t$、$\\frac{\\pi\\sqrt{2}}{9}$、$\\left(\\frac{dx}{dt}\\right)^2$。
-6. 如果原内容被截断，请根据已有内容补成合法 JSON。
+6. ${mathOutputInstruction}
+7. 如果原内容被截断，请根据已有内容补成合法 JSON。
 
 待修复内容：
 ${raw}`
@@ -748,7 +746,7 @@ export async function analyzeQuestionImageWithQwen({
 4. 不要生成新的 Quiz 题。
 5. recognizedText 只保留题干摘要，不要完整抄题。
 6. explanation 控制在 300 字以内，避免 JSON 被截断。
-7. 所有数学表达式必须使用 LaTeX，并且必须用 $...$ 包裹。
+7. ${mathOutputInstruction}
 8. 示例：$x=\\cosh t+t$、$\\left(\\frac{dx}{dt}\\right)^2$、$\\frac{\\pi\\sqrt{2}}{9}(16+9\\ln3)$。
 9. answer、recognizedText、explanation、commonMistakes、similarIdeas 中只要出现公式、变量、积分、分数、根号、指数，都必须用 $...$ 包裹。
 10. 只输出 JSON，结构如下：
@@ -791,7 +789,7 @@ export async function analyzeQuestionPdfTextWithQwen(text: string): Promise<Anal
 4. 不要生成新的 Quiz 题。
 5. recognizedText 只保留题干摘要，不要完整抄题。
 6. explanation 控制在 300 字以内，避免 JSON 被截断。
-7. 所有数学表达式必须使用 LaTeX，并且必须用 $...$ 包裹。
+7. ${mathOutputInstruction}
 8. 示例：$x=\\cosh t+t$、$\\left(\\frac{dx}{dt}\\right)^2$、$\\frac{\\pi\\sqrt{2}}{9}(16+9\\ln3)$。
 9. answer、recognizedText、explanation、commonMistakes、similarIdeas 中只要出现公式、变量、积分、分数、根号、指数，都必须用 $...$ 包裹。
 10. 只输出 JSON，结构如下：

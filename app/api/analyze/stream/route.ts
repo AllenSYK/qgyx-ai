@@ -31,7 +31,7 @@ import {
 } from "@/lib/ai/qwen";
 import type { OriginalExplanation, QuizResult } from "@/lib/ai/schema";
 import { getCurrentUser } from "@/lib/auth";
-import { normalizeLanguage, type AppLanguage } from "@/lib/language";
+import { mathOutputInstruction, normalizeLanguage, type AppLanguage } from "@/lib/language";
 import { normalizeLatexText } from "@/lib/latex";
 import {
   createGenerationAllowancePayload,
@@ -454,17 +454,8 @@ function buildFastVisionMessages({
 
 答案必须尽量具体，不要写“见解析”。知识点、易错点、类似题思路不要写空话。
 
-公式要求：
-- 所有公式必须能被 KaTeX 渲染。
-- 尽量使用行内公式 $...$。
-- 不要把普通文字放进公式。
-- 不要把 $$ 放在中文句子中间。
-- 分式写 $\\frac{a}{b}$。
-- 根号写 $\\sqrt{x}$。
-- 幂次写 $x^2$。
-- 坐标写 $\\left( ... \\right)$。
-- 箭头写 $\\Rightarrow$。
-- 禁止输出破碎公式，例如 \\frac$、孤立 $$、裸露 \\left。`
+数学表达必须像考试试卷：
+${mathOutputInstruction}`
     : `You are a concise math/science tutor.
 
 Use English only.
@@ -484,7 +475,7 @@ Format:
 ## Common Mistakes
 ## Similar Ideas
 
-Use KaTeX-compatible LaTeX. Prefer inline math $...$. Do not put prose inside math.`;
+Use exam-paper style math notation. Any variable, equation, inequality, function, coordinate, interval, fraction, radical, exponent, angle, ratio, or unit calculation must use KaTeX-compatible LaTeX. Prefer inline math $...$. Do not put prose inside math. Do not write verbal math such as "x squared" when $x^2$ is possible.`;
 
   return [
     {

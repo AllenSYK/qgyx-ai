@@ -106,6 +106,61 @@ function wrapMath(value: string) {
   return `$${clean}$`;
 }
 
+function toLatexAtom(value: string) {
+  const clean = value.trim();
+  if (clean === "π") return "\\pi";
+  return clean;
+}
+
+function normalizeVerbalExponent(value: string) {
+  const map: Record<string, string> = {
+    一: "1",
+    二: "2",
+    三: "3",
+    四: "4",
+    五: "5",
+    六: "6",
+    七: "7",
+    八: "8",
+    九: "9",
+    十: "10"
+  };
+
+  return map[value] || value;
+}
+
+function convertVerbalMathInFormula(input: string) {
+  return input
+    .replace(/点\s*([A-Za-z])\s*坐标\s*[（(]\s*([-+]?\d+(?:\.\d+)?)\s*[,，]\s*([-+]?\d+(?:\.\d+)?)\s*[）)]/g, (_match, point: string, x: string, y: string) =>
+      `${point}\\left(${x},${y}\\right)`
+    )
+    .replace(/([A-Za-zπ])\s*(?:的)?([0-9一二三四五六七八九十]+)次方/g, (_match, base: string, exponent: string) =>
+      `${toLatexAtom(base)}^${normalizeVerbalExponent(exponent)}`
+    )
+    .replace(/([A-Za-zπ])\s*(?:的)?平方/g, (_match, base: string) => `${toLatexAtom(base)}^2`)
+    .replace(/([A-Za-zπ])\s*(?:的)?立方/g, (_match, base: string) => `${toLatexAtom(base)}^3`)
+    .replace(/(?:根号|√)\s*([A-Za-z0-9π]+)/g, (_match, radicand: string) => `\\sqrt{${toLatexAtom(radicand)}}`)
+    .replace(/([A-Za-z0-9π]+)\s*除以\s*([A-Za-z0-9π]+)/g, (_match, left: string, right: string) =>
+      `\\frac{${toLatexAtom(left)}}{${toLatexAtom(right)}}`
+    );
+}
+
+function convertVerbalMath(input: string) {
+  return input
+    .replace(/点\s*([A-Za-z])\s*坐标\s*[（(]\s*([-+]?\d+(?:\.\d+)?)\s*[,，]\s*([-+]?\d+(?:\.\d+)?)\s*[）)]/g, (_match, point: string, x: string, y: string) =>
+      wrapMath(`${point}\\left(${x},${y}\\right)`)
+    )
+    .replace(/([A-Za-zπ])\s*(?:的)?([0-9一二三四五六七八九十]+)次方/g, (_match, base: string, exponent: string) =>
+      wrapMath(`${toLatexAtom(base)}^${normalizeVerbalExponent(exponent)}`)
+    )
+    .replace(/([A-Za-zπ])\s*(?:的)?平方/g, (_match, base: string) => wrapMath(`${toLatexAtom(base)}^2`))
+    .replace(/([A-Za-zπ])\s*(?:的)?立方/g, (_match, base: string) => wrapMath(`${toLatexAtom(base)}^3`))
+    .replace(/(?:根号|√)\s*([A-Za-z0-9π]+)/g, (_match, radicand: string) => wrapMath(`\\sqrt{${toLatexAtom(radicand)}}`))
+    .replace(/([A-Za-z0-9π]+)\s*除以\s*([A-Za-z0-9π]+)/g, (_match, left: string, right: string) =>
+      wrapMath(`\\frac{${toLatexAtom(left)}}{${toLatexAtom(right)}}`)
+    );
+}
+
 function splitMathSegments(input: string): Segment[] {
   const text = String(input || "");
   const segments: Segment[] = [];
@@ -144,14 +199,14 @@ function splitMathSegments(input: string): Segment[] {
 
 function normalizeExistingMath(segment: string) {
   if (segment.startsWith("$$") && segment.endsWith("$$")) {
-    const fixed = repairBrokenSyntax(segment.slice(2, -2)).trim();
+    const fixed = convertVerbalMathInFormula(repairBrokenSyntax(segment.slice(2, -2)).trim());
     if (!fixed) return "";
     if (!shouldKeepMath(fixed)) return fixed;
     return `$$${fixed}$$`;
   }
 
   if (segment.startsWith("$") && segment.endsWith("$")) {
-    const fixed = repairBrokenSyntax(segment.slice(1, -1)).trim();
+    const fixed = convertVerbalMathInFormula(repairBrokenSyntax(segment.slice(1, -1)).trim());
     if (!fixed) return "";
     if (!shouldKeepMath(fixed)) return fixed;
     return `$${fixed}$`;
@@ -163,11 +218,11 @@ function normalizeExistingMath(segment: string) {
 function convertSimpleFraction(match: string) {
   const [left, right] = match.split("/").map((part) => part.trim());
   if (!left || !right) return match;
-  return `\\frac{${left}}{${right}}`;
+  return `\\frac{${toLatexAtom(left)}}{${toLatexAtom(right)}}`;
 }
 
 function wrapBareMathInText(input: string) {
-  let next = input;
+  let next = convertVerbalMath(input);
 
   next = next.replace(
     /(\\frac\{[^{}\n]+\}\{[^{}\n]+\}|\\sqrt\{[^{}\n]+\}|\\boxed\{[^{}\n]+\}|\\left\s*[\(\[\{.][^，。；;\n]*?\\right\s*[\)\]\}.]|\\angle\s*[A-Za-z0-9]+)/g,
@@ -182,7 +237,7 @@ function wrapBareMathInText(input: string) {
   );
 
   next = next.replace(
-    /(^|[\s（(，。；、])(\d+\s*\/\s*\d+|[A-Za-z]\s*\/\s*[A-Za-z0-9])/g,
+    /(^|[\s（(，。；、])(\d+\s*\/\s*\d+|[A-Za-zπ]\s*\/\s*[A-Za-z0-9π])/g,
     (_match, prefix: string, formula: string) => `${prefix}${wrapMath(convertSimpleFraction(formula))}`
   );
 

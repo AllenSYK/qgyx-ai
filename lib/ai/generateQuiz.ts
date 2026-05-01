@@ -9,7 +9,7 @@ import {
 import { assertParsed, parseAndValidateJson } from "@/lib/ai/jsonRepair";
 import { isUsableOriginalExplanation } from "@/lib/ai/originalExplanationQuality";
 import { postQwenChatCompletion, QWEN_QUIZ_MODEL, readAssistantText, type ChatMessage } from "@/lib/ai/qwen";
-import { normalizeLanguage, type AppLanguage } from "@/lib/language";
+import { mathOutputInstruction, normalizeLanguage, type AppLanguage } from "@/lib/language";
 
 export async function generateQuiz({
   detectedText,
@@ -46,7 +46,9 @@ ${languageRule}
 Do not output Thinking, Reasoning, Chain of Thought, internal analysis, self-checking, corrections, or <think> tags.
 生成 ${safeQuestionCount} 道围绕原题知识点的简洁变式选择题，每题 4 个选项，correctAnswer 只能是 A/B/C/D。
 题目和选项必须短，不要长背景；不要包含 explanation、detailedExplanation 或长解析；不要基于兜底话术出题。
-公式必须使用 KaTeX 可渲染的 LaTeX：行内公式 $...$，必要时块级公式 $$...$$。分式写 $\\frac{a}{b}$，根号写 $\\sqrt{x}$，幂次写 $x^2$，坐标写 $\\left( ... \\right)$。不要把普通文字放进 $...$，不要输出孤立 $$ 或 \\frac$。
+题干和选项要像考试试卷：凡是可以用数学形式表达的内容，都必须写成标准数学形式；不要写“x平方”“根号x”“π除以3”这类口语化数学。
+question 与 options 中的公式必须使用 KaTeX 可渲染 LaTeX；数学型选项尽量只写数学式，不要把 A/B/C/D 或解释拼进选项。
+${mathOutputInstruction}
 JSON 格式：
 ${QUIZ_JSON_SHAPE}`
     },
