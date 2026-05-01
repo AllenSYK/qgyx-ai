@@ -37,9 +37,9 @@ export async function generateQuiz({
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: `你是 Quiz 出题助手。只输出 JSON，不要 Markdown，不要解析，不要输出思考过程、推理草稿、Thinking、Reasoning、<think>...</think>。
+      content: `You are a concise Quiz generator. Follow the selected output language. Do not output Thinking, Reasoning, Chain of Thought, internal analysis, or <think> tags. 只输出 JSON，不要 Markdown，不要解析，不要输出思考过程、推理草稿、Thinking、Reasoning、<think>...</think>。
 生成 ${safeQuestionCount} 道围绕原题知识点的简洁变式选择题，每题 4 个选项，correctAnswer 只能是 A/B/C/D。题目和选项尽量短，不要写长背景。
-不要包含 explanation 或 detailedExplanation。不要输出长解析。不要输出长解析。禁止基于兜底话术出题，不编造不存在的原题。
+Do not include explanation or detailedExplanation. Do not output long analysis.不要输出长解析。不要输出长解析。禁止基于兜底话术出题，不编造不存在的原题。
 所有数学公式必须使用 KaTeX 可渲染的标准 LaTeX：行内公式写成 $...$，独立公式写成 $$...$$，分式写成 $\\frac{a}{b}$，根号写成 $\\sqrt{x}$，幂次写成 $x^2$。禁止在 \frac 后插入多余的美元符号，禁止多余的 $，禁止代码块包公式。禁止把 $$ 写在中文句子中间；长公式必须单独成行写成 $$...$$，短公式只能写成 $...$。坐标、交点、区间必须写成 $\\left( ... \\right)$，变量和物理符号也要写成数学形式，例如 $x$、$y$、$v$、$F$、$m$、$a$、$k$。坐标、交点、区间必须写成 $\\left( ... \\right)$，变量和物理符号也要写成数学形式，例如 $x$、$y$、$v$、$F$、$m$、$a$、$k$。输出语言：${outputLanguage === "en" ? "English" : "中文"}。
 JSON 格式：
 ${QUIZ_JSON_SHAPE}`

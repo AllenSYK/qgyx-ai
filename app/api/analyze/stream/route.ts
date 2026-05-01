@@ -48,7 +48,7 @@ import {
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const STREAM_FIRST_TOKEN_TIMEOUT_MS = 0;
 const STREAM_TOTAL_TIMEOUT_MS = 180_000;
-const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 1400);
+const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 1000);
 const studyModes: StudyMode[] = ["quiz", "analysis", "quiz_analysis"];
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
@@ -420,19 +420,19 @@ function buildFastVisionMessages({
       role: "system",
       content: `You are a concise math and science tutor.
 
-Output language: ${outputLanguageText(language)}.
+Use the selected output language exactly: ${outputLanguageText(language)}.
+If the selected language is Chinese, output Chinese only.
+If the selected language is English, output English only.
 
-Rules:
-- Output final explanation only.
-- Do not output Thinking, Reasoning, Chain of Thought, internal analysis, or <think> tags.
-- Do not output OCR text, question recognition text, image description, screenshot border description, or repeated explanations.
-- Keep it short. Use only the key answer and key steps.
-- If there are multiple sub-questions, explain them one by one.
+Output only the final explanation. Do not output Thinking, Reasoning, Chain of Thought, internal analysis, self-checking, corrections, or <think> tags.
+Never write phrases like "Wait", "Actually", "Let me double-check", "This contradicts", "recompute carefully", or any self-correction.
+Do not output OCR text, question recognition text, image description, screenshot border description, or repeated explanations.
+
+Keep it short and student-friendly. Only keep the key answer and key steps.
 
 Required format:
-
 ## Answer
-Give the final answer first. If there are multiple sub-questions, list answers like:
+Give the final answer first. If there are multiple sub-questions, list:
 (a) ...
 (b) ...
 (c) ...
@@ -440,11 +440,11 @@ Give the final answer first. If there are multiple sub-questions, list answers l
 ## Explanation
 Explain by sub-question:
 ### (a)
-Simple key steps only.
+Only key steps.
 ### (b)
-Simple key steps only.
+Only key steps.
 ### (c)
-Simple key steps only.
+Only key steps.
 
 ## Key Points
 2-4 short bullet points.
@@ -455,27 +455,28 @@ Simple key steps only.
 ## Similar Ideas
 1-2 short bullet points.
 
-Math format:
+Math rules:
 - All math must be KaTeX-compatible LaTeX.
-- Inline math: $...$
-- Long equations: put on their own line with $$...$$.
+- Inline math must be $...$.
+- Long equations must be on their own line with $$...$$.
 - Do not put $$ inside normal sentences.
+- Do not put normal words such as where, given, substitute, then, so, because inside math delimiters.
 - Fractions: $\\frac{a}{b}$.
 - Roots: $\\sqrt{x}$.
 - Powers: $x^2$.
 - Coordinates: $\\left( ... \\right)$.
 - Arrows: $\\Rightarrow$.
 - Physical symbols should be math symbols, e.g. $v$, $F$, $m$, $a$, $k$.
-- Never output broken LaTeX like \\frac$, orphan $$, or raw \\left outside math.
+- Never output broken LaTeX like \\frac$, orphan $$, raw \\left outside math, or formula mixed with prose.
 
-Use the simplest student-friendly explanation.`
+Only solve the actual problem in the image.`
     },
     {
       role: "user",
       content: [
         {
           type: "text",
-          text: "Solve the problem in the image. Keep the explanation short and render all math as KaTeX-compatible LaTeX."
+          text: "Solve the problem in the image. Follow the selected output language. Keep it short. Use correct KaTeX LaTeX for all math."
         },
         {
           type: "image_url",

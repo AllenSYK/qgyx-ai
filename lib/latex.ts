@@ -1,5 +1,8 @@
 ﻿const LATEX_COMMANDS =
-  "frac|sqrt|left|right|cdot|times|Rightarrow|Leftarrow|rightarrow|leftarrow|le|ge|neq|approx|sin|cos|tan|arcsin|arccos|arctan|ln|log|pi|theta|alpha|beta|gamma|Delta|delta|lambda|mu|rho|sigma|omega|vec|mathbf|overline|boxed|angle|triangle|int|sum|lim|text";
+  "frac|sqrt|left|right|cdot|times|Rightarrow|Leftarrow|rightarrow|leftarrow|le|ge|neq|approx|sin|cos|tan|arcsin|arccos|arctan|ln|log|pi|theta|alpha|beta|gamma|Delta|delta|lambda|mu|rho|sigma|omega|vec|mathbf|overline|boxed|angle|triangle|int|sum|lim|text|begin|end";
+
+const PROSE_WORDS =
+  /\b(where|given|substitute|then|so|because|actually|wait|recompute|contradict|check|verify|vertex|intersect|translation|original|new|simplify|final|means|with|left|right|up|down|therefore)\b/i;
 
 function repairBrokenSyntax(input: string) {
   return String(input || "")
@@ -32,19 +35,33 @@ function hasCjk(value: string) {
   return /[\u4e00-\u9fff]/.test(value);
 }
 
+function isProseMath(value: string) {
+  const text = String(value || "").trim();
+
+  if (!text) return false;
+  if (hasCjk(text)) return true;
+  if (PROSE_WORDS.test(text)) return true;
+
+  const words = text.match(/[A-Za-z]{3,}/g) || [];
+  const commands = text.match(/\\[A-Za-z]+/g) || [];
+
+  return words.length >= 3 && commands.length === 0;
+}
+
 function normalizeInlineDoubleDollar(line: string) {
   const t = line.trim();
 
   if (t.startsWith("$$") && t.endsWith("$$") && t.length > 4) {
     const inner = t.slice(2, -2).trim();
-    if (inner && !hasCjk(inner)) {
+    if (inner && !isProseMath(inner)) {
       return line;
     }
   }
 
   return line.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula: string) => {
     const clean = repairBrokenSyntax(formula).trim();
-    return clean ? `$${clean}$` : "";
+    if (!clean) return "";
+    return isProseMath(clean) ? clean : `$${clean}$`;
   });
 }
 
@@ -90,6 +107,7 @@ function stripLooseDollars(value: string) {
 function wrapMath(value: string) {
   const clean = repairBrokenSyntax(value).trim();
   if (!clean) return value;
+  if (isProseMath(clean)) return clean;
   if (clean.startsWith("$") && clean.endsWith("$")) return clean;
   return `$${clean}$`;
 }
@@ -98,7 +116,7 @@ function looksLikeStandaloneMath(line: string) {
   const clean = line.replace(/^[-*]\s*/, "").replace(/^#+\s*/, "").trim();
 
   if (!clean) return false;
-  if (hasCjk(clean)) return false;
+  if (isProseMath(clean)) return false;
 
   return (
     new RegExp(`\\\\(?:${LATEX_COMMANDS})`).test(clean) ||
@@ -119,7 +137,7 @@ function wrapLineMath(line: string) {
     let wrapped = text;
 
     wrapped = wrapped.replace(
-      /(\\frac\{[^{}\n]+\}\{[^{}\n]+\}|\\sqrt\{[^{}\n]+\}|\\boxed\{[^{}\n]+\}|\\text\{[^{}\n]+\}|\\vec\{[^{}\n]+\}|\\mathbf\{[^{}\n]+\}|\\overline\{[^{}\n]+\})/g,
+      /(\\frac\{[^{}\n]+\}\{[^{}\n]+\}|\\sqrt\{[^{}\n]+\}|\\boxed\{[^{}\n]+\}|\\text\{[^{}\n]+\}|\\vec\{[^{}\n]+\}|\\mathbf\{[^{}\n]+\}|\\overline\{[^{}\n]+\}|\\begin\{[^{}\n]+\}[\s\S]*?\\end\{[^{}\n]+\})/g,
       (match) => wrapMath(match)
     );
 
@@ -142,7 +160,7 @@ function wrapLineMath(line: string) {
       (match) => {
         const clean = match.trim();
         if (!clean) return match;
-        if (hasCjk(clean)) return match;
+        if (isProseMath(clean)) return match;
         return wrapMath(clean);
       }
     );
@@ -188,12 +206,14 @@ function normalizeMathBlocks(value: string) {
       .replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula: string) => {
         const fixed = repairBrokenSyntax(formula).trim();
         if (!fixed) return "";
-        if (hasCjk(fixed)) return `$${fixed}$`;
+        if (isProseMath(fixed)) return fixed;
         return `$$${fixed}$$`;
       })
       .replace(/\$([^$\n]+)\$/g, (_match, formula: string) => {
         const fixed = repairBrokenSyntax(formula).trim();
-        return fixed ? `$${fixed}$` : "";
+        if (!fixed) return "";
+        if (isProseMath(fixed)) return fixed;
+        return `$${fixed}$`;
       })
       .replace(/\$\$\s*\$\$/g, "")
       .replace(/\$\s+\$/g, "")

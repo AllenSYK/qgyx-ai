@@ -24,6 +24,7 @@ function stripReasoning(input: string) {
   );
 
   text = text.replace(/^\s*(Thinking:|Reasoning:|Let me think|I will analyze|让我先思考|我先分析|我们先分析).*$/gim, "");
+  text = text.replace(/^\s*(Wait|Actually|Let'?s recompute|Let me double-check|This contradicts|Better:).*$/gim, "");
 
   return text.trim();
 }
@@ -46,36 +47,16 @@ export default function MarkdownRenderer({ text, className, as = "div" }: Markdo
         rehypePlugins={[[rehypeKatex, { strict: "ignore", throwOnError: false, errorColor: "#0f172a" }]]}
         components={{
           p: ({ children }) =>
-            inline ? (
-              <span className="text-slate-950">{children}</span>
-            ) : (
-              <p className="mb-3 leading-7 text-slate-950 last:mb-0">{children}</p>
-            ),
+            inline ? <span className="text-slate-950">{children}</span> : <p className="mb-3 leading-7 text-slate-950 last:mb-0">{children}</p>,
           ul: ({ children }) => <ul className="my-3 list-disc space-y-1.5 pl-5 text-slate-950">{children}</ul>,
           ol: ({ children }) => <ol className="my-3 list-decimal space-y-1.5 pl-5 text-slate-950">{children}</ol>,
           li: ({ children }) => <li className="leading-7 text-slate-950">{children}</li>,
-          h1: ({ children }) => (
-            <h3 className="mb-3 mt-5 rounded-2xl bg-blue-50 px-4 py-2 text-lg font-bold text-blue-950 first:mt-0">
-              {children}
-            </h3>
-          ),
-          h2: ({ children }) => (
-            <h3 className="mb-3 mt-5 rounded-2xl bg-blue-50 px-4 py-2 text-base font-bold text-blue-950 first:mt-0">
-              {children}
-            </h3>
-          ),
-          h3: ({ children }) => (
-            <h3 className="mb-2 mt-4 text-base font-bold text-blue-950 first:mt-0">{children}</h3>
-          ),
+          h1: ({ children }) => <h3 className="mb-3 mt-5 rounded-2xl bg-blue-50 px-4 py-2 text-lg font-bold text-blue-950 first:mt-0">{children}</h3>,
+          h2: ({ children }) => <h3 className="mb-3 mt-5 rounded-2xl bg-blue-50 px-4 py-2 text-base font-bold text-blue-950 first:mt-0">{children}</h3>,
+          h3: ({ children }) => <h3 className="mb-2 mt-4 text-base font-bold text-blue-950 first:mt-0">{children}</h3>,
           strong: ({ children }) => <strong className="font-bold text-slate-950">{children}</strong>,
-          code: ({ children }) => (
-            <code className="rounded-lg bg-blue-50 px-1.5 py-0.5 text-[0.95em] font-semibold text-blue-950">
-              {children}
-            </code>
-          ),
-          pre: ({ children }) => (
-            <pre className="my-3 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-sm text-white">{children}</pre>
-          )
+          code: ({ children }) => <code className="rounded-lg bg-blue-50 px-1.5 py-0.5 text-[0.95em] font-semibold text-blue-950">{children}</code>,
+          pre: ({ children }) => <pre className="my-3 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-sm text-white">{children}</pre>
         }}
       >
         {content}

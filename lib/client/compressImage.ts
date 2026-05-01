@@ -49,13 +49,10 @@ export async function compressImageForUpload(file: File) {
     const scale = longestEdge > MAX_EDGE ? MAX_EDGE / longestEdge : 1;
     const width = Math.max(1, Math.round(image.naturalWidth * scale));
     const height = Math.max(1, Math.round(image.naturalHeight * scale));
-
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { alpha: false });
 
-    if (!context) {
-      return file;
-    }
+    if (!context) return file;
 
     canvas.width = width;
     canvas.height = height;
@@ -67,20 +64,14 @@ export async function compressImageForUpload(file: File) {
 
     let blob = await canvasToJpegBlob(canvas, JPEG_QUALITY);
 
-    if (!blob) {
-      return file;
-    }
+    if (!blob) return file;
 
     if (blob.size > ONE_MB) {
       const smallerBlob = await canvasToJpegBlob(canvas, 0.68);
-      if (smallerBlob && smallerBlob.size < blob.size) {
-        blob = smallerBlob;
-      }
+      if (smallerBlob && smallerBlob.size < blob.size) blob = smallerBlob;
     }
 
-    if (!blob || blob.size >= file.size) {
-      return file;
-    }
+    if (!blob || blob.size >= file.size) return file;
 
     return new File([blob], replaceExtension(file.name), {
       type: "image/jpeg",

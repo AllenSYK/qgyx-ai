@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import type { OriginalExplanation } from "@/lib/ai/schema";
 import { normalizeLanguage, type AppLanguage } from "@/lib/language";
@@ -90,20 +90,20 @@ export function markdownFromOriginalExplanation(original: OriginalExplanation) {
     : [original.topic].filter(Boolean);
 
   return [
-    "## 识别到的题目",
-    original.detectedText,
-    "",
-    "## 最终答案",
+    "## Answer",
     original.finalAnswer,
     "",
-    "## 分步骤解析",
+    "## Explanation",
     original.explanation,
     "",
-    "## 涉及知识点",
-    ...knowledgePoints.map((point) => `- ${point}`),
+    "## Key Points",
+    ...knowledgePoints.slice(0, 4).map((point) => `- ${point}`),
     "",
-    "## 易错点",
-    original.commonMistake
+    "## Common Mistakes",
+    original.commonMistake,
+    "",
+    "## Similar Ideas",
+    ...original.similarIdeas.slice(0, 2).map((idea) => `- ${idea}`)
   ].join("\n").trim();
 }
 
@@ -123,7 +123,7 @@ export function createOriginalExplanationFromMarkdown(markdown: string, language
     4000
   );
   const explanationSection = sectionAfter(normalized, ["分步骤解析", "解析", "Solution", "Steps"]);
-  const explanation = normalized || explanationSection || finalAnswer;
+  const explanation = explanationSection || normalized || finalAnswer;
   const knowledgeText = sectionAfter(normalized, ["涉及知识点", "知识点", "Knowledge Points", "Knowledge"]);
   const mistakeText = sectionAfter(normalized, ["易错点", "常见错误", "Common Mistakes"]);
   const keySteps = splitList(explanationSection, [
