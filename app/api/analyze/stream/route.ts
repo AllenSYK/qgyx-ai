@@ -48,7 +48,7 @@ import {
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const STREAM_FIRST_TOKEN_TIMEOUT_MS = 0;
 const STREAM_TOTAL_TIMEOUT_MS = 180_000;
-const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 900);
+const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 700);
 const studyModes: StudyMode[] = ["quiz", "analysis", "quiz_analysis"];
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
@@ -402,6 +402,46 @@ async function generateQuizForStreamJob({
   }
 }
 
+function cleanGeneratedMarkdown(markdown: string, language: AppLanguage) {
+  let text = String(markdown || "");
+
+  text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  text = text.replace(/<think>[\s\S]*$/gi, "");
+
+  const badLine =
+    /(Wait|Actually|Let'?s|Let me double-check|This contradicts|recompute|re-evaluate|mistake|correction|double-check|错误|重新检查|再核对|矛盾|纠正|等等|实际上|我先|我来分析|让我们分析|思考过程|推理过程|内部分析)/i;
+
+  text = text
+    .split("\n")
+    .filter((line) => !badLine.test(line.trim()))
+    .join("\n");
+
+  text = text.replace(/(^|\n)#{1,6}\s*(Question|题目|识别到的题目|题目识别|OCR|Image Description|图片描述)\s*\n[\s\S]*?(?=\n#{1,6}\s*(Answer|答案|Explanation|解析)|$)/gi, "$1");
+
+  if (language !== "en") {
+    text = text
+      .replace(/^##\s*Answer\s*$/gim, "## 答案")
+      .replace(/^##\s*Explanation\s*$/gim, "## 解析")
+      .replace(/^##\s*Key Points\s*$/gim, "## 知识点")
+      .replace(/^##\s*Common Mistakes\s*$/gim, "## 易错点")
+      .replace(/^##\s*Similar Ideas\s*$/gim, "## 类似题思路");
+  }
+
+  text = text.replace(/\n{3,}/g, "\n\n").trim();
+
+  return text;
+}
+
+function cleanLiveChunk(chunk: string) {
+  const badLine =
+    /(Wait|Actually|Let'?s|Let me double-check|This contradicts|recompute|re-evaluate|mistake|correction|double-check|错误|重新检查|再核对|矛盾|纠正|等等|实际上|我先|我来分析|让我们分析|思考过程|推理过程|内部分析)/i;
+
+  return String(chunk || "")
+    .split("\n")
+    .filter((line) => !badLine.test(line.trim()))
+    .join("\n");
+}
+
 function outputLanguageText(language: AppLanguage) {
   return language === "en" ? "English" : "中文";
 }
@@ -420,61 +460,54 @@ function buildFastVisionMessages({
   const systemPrompt = isZh
     ? `你是一个简洁的数学/理科学习解析助手。
 
-必须只用中文输出。
-不要输出英文。
-不要输出思考过程、推理草稿、内部分析、Thinking、Reasoning、Chain of Thought、<think>。
-不要写 Wait、Actually、Let me double-check、重新检查、我先思考、我来分析、纠正一下。
-不要输出 OCR 原文、题目识别、图片描述、手机截图、浏览器边框。
-不要重复解释，不要长篇推导。
+必须只用中文输出，不能输出英文句子。
+只输出最终解析，不能输出思考过程、推理草稿、内部分析、自我检查、自我纠错。
+禁止出现：Wait、Actually、Let me double-check、重新检查、再核对、矛盾、错误、纠正、我先思考、我来分析。
+不要输出题目识别、OCR 原文、图片描述、手机截图、浏览器边框。
+不要长篇推导，只保留最关键步骤。
 
-只保留最重要的解题过程，给学生能看懂的关键步骤即可。
-
-输出格式必须是：
+输出格式只能是：
 
 ## 答案
-如果有多问，用：
 (a) ...
 (b) ...
 (c) ...
 
 ## 解析
-按小题解析：
 ### (a)
-只写关键步骤。
+关键步骤，最多 3 行。
 ### (b)
-只写关键步骤。
+关键步骤，最多 3 行。
 ### (c)
-只写关键步骤。
+关键步骤，最多 3 行。
 
 ## 知识点
-2-4 条短要点。
+- 2 到 4 条短要点
 
 ## 易错点
-1-2 条短要点。
+- 1 到 2 条短要点
 
 ## 类似题思路
-1-2 条短要点。
+- 1 到 2 条短要点
 
-数学公式要求：
-- 所有数学必须是 KaTeX 可渲染 LaTeX。
-- 行内公式用 $...$。
-- 长公式单独成行用 $$...$$。
-- 不要把 $$ 写在中文句子中间。
-- 不要把普通文字放进公式里。
+公式要求：
+- 所有公式必须能被 KaTeX 渲染。
+- 尽量使用行内公式 $...$。
+- 不要把普通文字放进公式。
+- 不要把 $$ 放在中文句子中间。
 - 分式写 $\\frac{a}{b}$。
 - 根号写 $\\sqrt{x}$。
 - 幂次写 $x^2$。
 - 坐标写 $\\left( ... \\right)$。
 - 箭头写 $\\Rightarrow$。
-- 物理符号写成 $v$、$F$、$m$、$a$、$k$。
 - 禁止输出破碎公式，例如 \\frac$、孤立 $$、裸露 \\left。`
     : `You are a concise math/science tutor.
 
 Use English only.
-Do not output Thinking, Reasoning, Chain of Thought, internal analysis, self-corrections, or <think>.
-Do not write Wait, Actually, Let me double-check, or any correction process.
-Do not output OCR text, question recognition text, image description, phone screenshot, or browser border.
-Keep only the key answer and key solving steps.
+Output final explanation only.
+Do not output Thinking, Reasoning, Chain of Thought, internal analysis, self-checking, or corrections.
+Do not write Wait, Actually, Let me double-check, recompute, contradiction, mistake, or correction.
+Keep only key steps.
 
 Format:
 ## Answer
@@ -486,12 +519,7 @@ Format:
 ## Common Mistakes
 ## Similar Ideas
 
-Math must be KaTeX-compatible LaTeX:
-inline math $...$, display math $$...$$.
-Do not put $$ inside normal sentences.
-Do not put normal prose inside math.
-Use $\\frac{a}{b}$, $\\sqrt{x}$, $x^2$, $\\left( ... \\right)$, $\\Rightarrow$.
-Never output broken LaTeX like \\frac$, orphan $$, or raw \\left outside math.`;
+Use KaTeX-compatible LaTeX. Prefer inline math $...$. Do not put prose inside math.`;
 
   return [
     {
@@ -504,8 +532,8 @@ Never output broken LaTeX like \\frac$, orphan $$, or raw \\left outside math.`;
         {
           type: "text",
           text: isZh
-            ? "请解答图片里的题目。必须用中文，解析要短，只保留答案和关键步骤，数学公式必须可正常渲染。"
-            : "Solve the problem in the image. Keep it short and render all math correctly."
+            ? "请解答图片里的题目。必须只用中文，保留答案和关键步骤，不要展示思考过程，公式必须正常渲染。"
+            : "Solve the problem in the image. Keep only the answer and key steps. No reasoning process."
         },
         {
           type: "image_url",
@@ -805,7 +833,7 @@ export async function POST(request: Request) {
                 mimeType,
                 language
               }),
-              temperature: 0.08,
+              temperature: 0,
               enable_thinking: false,
               max_tokens: VISION_STREAM_MAX_TOKENS
             },
@@ -815,13 +843,20 @@ export async function POST(request: Request) {
             }
           )) {
             fullMarkdown += chunk.text;
+            const visibleText = cleanLiveChunk(chunk.text);
+
+            if (!visibleText) {
+              continue;
+            }
 
             send("delta", {
-              text: chunk.text,
+              text: visibleText,
               progress: 65,
               stage: "正在生成解析..."
             });
           }
+
+          fullMarkdown = cleanGeneratedMarkdown(fullMarkdown, language);
 
           if (!fullMarkdown.trim()) {
             throw new AnalyzeStreamError("AI 没有返回有效解析内容，请稍后重试。", 503);

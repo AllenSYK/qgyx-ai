@@ -19,32 +19,15 @@ function stripNoise(input: string) {
   text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
   text = text.replace(/<think>[\s\S]*$/gi, "");
 
-  text = text.replace(
-    /(^|\n)#{0,6}\s*(思考过程|推理过程|推理草稿|内部思考|内部推理|Thinking|Reasoning|Chain of Thought|Internal Reasoning|Analysis)\s*[:：]?\s*[\s\S]*?(?=\n#{1,6}\s*(答案|解析|知识点|易错点|类似题思路|Answer|Explanation|Key Points|Common Mistakes|Similar Ideas)|$)/gi,
-    "$1"
-  );
+  const badLine =
+    /(Wait|Actually|Let'?s|Let me double-check|This contradicts|recompute|re-evaluate|mistake|correction|double-check|错误|重新检查|再核对|矛盾|纠正|等等|实际上|我先|我来分析|让我们分析|思考过程|推理过程|内部分析)/i;
 
   text = text
     .split("\n")
-    .filter((line) => {
-      const t = line.trim();
-      if (!t) return true;
-
-      if (/^(Wait|Actually|Let'?s|Let me double-check|This contradicts|Better:|Recompute|Correction)/i.test(t)) {
-        return false;
-      }
-
-      if (/^(我先思考|我来分析|让我们分析|纠正一下|重新检查|等等|实际上|让我重新)/.test(t)) {
-        return false;
-      }
-
-      if (/^(题目识别|OCR|识别到的题目|Question Recognition|Image description)/i.test(t)) {
-        return false;
-      }
-
-      return true;
-    })
+    .filter((line) => !badLine.test(line.trim()))
     .join("\n");
+
+  text = text.replace(/(^|\n)#{1,6}\s*(Question|题目|识别到的题目|题目识别|OCR|Image Description|图片描述)\s*\n[\s\S]*?(?=\n#{1,6}\s*(Answer|答案|Explanation|解析)|$)/gi, "$1");
 
   return text.trim();
 }
