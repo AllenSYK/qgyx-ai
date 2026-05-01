@@ -28,9 +28,11 @@ import {
   AiConfigurationError,
   AiTimeoutError,
   consumeLastAiUsage,
-  getQwenModelName
+  getQwenModelName,
+  type MembershipTier
 } from "@/lib/ai/qwen";
 import type { OriginalExplanation, QuizResult } from "@/lib/ai/schema";
+import { detectComplexMathQuestion, getComplexityWarning } from "@/lib/ai/complexMathDetection";
 import { getCurrentUser } from "@/lib/auth";
 import { extractPdfText } from "@/lib/pdf";
 import { getRequestMeta } from "@/lib/request-meta";
@@ -619,7 +621,14 @@ function sanitizeOriginalExplanation(originalExplanation: OriginalExplanation, l
     keySteps: normalized.keySteps.map((item) => cleanOriginalText(item, language)).filter(Boolean).slice(0, 4),
     knowledgePoints: (normalized.knowledgePoints || []).map((item) => cleanOriginalText(item, language)).filter(Boolean).slice(0, 4),
     commonMistake: cleanOriginalText(normalized.commonMistake, language),
-    similarIdeas: normalized.similarIdeas.map((item) => cleanOriginalText(item, language)).filter(Boolean).slice(0, 2)
+    similarIdeas: normalized.similarIdeas.map((item) => cleanOriginalText(item, language)).filter(Boolean).slice(0, 2),
+    steps: (normalized.steps || []).map((s) => ({
+      title: cleanOriginalText(s.title, language),
+      content: cleanOriginalText(s.content, language),
+      formula: cleanOriginalText(s.formula || "", language)
+    })).filter((s) => s.title && s.content).slice(0, 6),
+    formulas: (normalized.formulas || []).map((f) => cleanOriginalText(f, language)).filter(Boolean).slice(0, 8),
+    warnings: normalized.warnings || []
   };
   const fullText = JSON.stringify(cleaned);
 
@@ -648,13 +657,15 @@ async function generateImageOriginalWithFallback({
   mimeType,
   imageSummary,
   userId,
-  language
+  language,
+  tier
 }: {
   base64: string;
   mimeType: string;
   imageSummary: string;
   userId: string;
   language: AppLanguage;
+  tier: MembershipTier;
 }) {
   try {
     const originalExplanation = await generateOriginalExplanationFromImage({
@@ -662,7 +673,8 @@ async function generateImageOriginalWithFallback({
       mimeType,
       imageSummary,
       userId,
-      language
+      language,
+      tier
     });
 
     return {
@@ -909,12 +921,14 @@ export async function POST(request: Request) {
       await updateJobStatus(admin, jobId, "generating_explanation");
 
       const imageBase64 = buffer.toString("base64");
+      const tier: MembershipTier = allowance.membershipLevel === "max" ? "max" : allowance.membershipLevel === "pro" ? "pro" : "free";
       const generated = await generateImageOriginalWithFallback({
         base64: imageBase64,
         mimeType: imageMimeType,
         imageSummary,
         userId: user.id,
-        language
+        language,
+        tier
       });
 
       detectedText = generated.detectedText;
@@ -963,13 +977,23 @@ export async function POST(request: Request) {
 
     const originalExplanation = sanitizeOriginalExplanation(originalExplanationRaw, language);
     const effectiveDetectedText = detectedText || originalExplanation.detectedText;
+
+    const tierForCheck: MembershipTier = allowance.membershipLevel === "max" ? "max" : allowance.membershipLevel === "pro" ? "pro" : "free";
+    const isComplex = detectComplexMathQuestion(effectiveDetectedText);
+    const complexityWarning = getComplexityWarning(isComplex ? "complex" : "simple", tierForCheck);
+    const finalExplanation = complexityWarning
+      ? {
+          ...originalExplanation,
+          warnings: [...(originalExplanation.warnings || []), complexityWarning]
+        }
+      : originalExplanation;
     const effectiveOcrHash = effectiveDetectedText ? createTextHash(effectiveDetectedText) : ocrHash;
     const nextStatus: AnalysisJobStatus = mode === "analysis" ? "completed" : "explanation_done";
 
     const row = await updateJobAndReturn(admin, jobId, nextStatus, {
       detected_text: effectiveDetectedText,
       ...(effectiveOcrHash ? { ocr_hash: effectiveOcrHash } : {}),
-      original_explanation: originalExplanation,
+      original_explanation: finalExplanation,
       error_message: null
     });
 
@@ -991,7 +1015,7 @@ export async function POST(request: Request) {
         mode,
         sourceType,
         imageUrl: null,
-        originalExplanation,
+        originalExplanation: finalExplanation,
         request
       })
     ]);
@@ -1055,11 +1079,11 @@ export async function POST(request: Request) {
       language,
       cached: false,
       imageUrl: null,
-      analysisText: markdownFromOriginalExplanation(originalExplanation, language),
+      analysisText: markdownFromOriginalExplanation(finalExplanation, language),
       analysisRecordId: analysisRecordResult.status === "fulfilled" ? analysisRecordResult.value : null,
       ...createGenerationAllowancePayload(refreshedAllowance),
-      originalExplanation,
-      analysis: originalExplanationToAnalysisResult(originalExplanation),
+      originalExplanation: finalExplanation,
+      analysis: originalExplanationToAnalysisResult(finalExplanation),
       quizResult: null,
       quiz: null
     });

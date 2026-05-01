@@ -60,7 +60,63 @@ function repairBrokenSyntax(input: string) {
     .replace(/\bdy\s*\/\s*d\\theta\b/g, "\\frac{dy}{d\\theta}")
     .replace(/\bdx\s*\/\s*dtheta\b/g, "\\frac{dx}{d\\theta}")
     .replace(/\bdy\s*\/\s*dtheta\b/g, "\\frac{dy}{d\\theta}")
+    .replace(/\\frac\{(\w)\}\{(\w)\}\s*\\frac\{(\w)\}\{(\w)\}/g, "\\frac{$1}{$2}\\frac{$3}{$4}")
     .trim();
+}
+
+function fixUnclosedFrac(input: string): string {
+  let result = input;
+  let safety = 0;
+
+  while (safety < 10) {
+    const fracMatch = result.match(/\\frac\{([^{}]*)\}(?!\{)/);
+    if (!fracMatch) break;
+
+    const start = fracMatch.index ?? 0;
+    const before = result.slice(0, start);
+    const after = result.slice(start + fracMatch[0].length);
+
+    if (after.trimStart().startsWith("{")) {
+      break;
+    }
+
+    const nextChar = after.trimStart().charAt(0);
+    if (nextChar) {
+      result = before + `\\frac{${fracMatch[1]}}{${nextChar}}` + after.slice(after.indexOf(nextChar) + 1);
+    } else {
+      result = before + `\\frac{${fracMatch[1]}}{?}`;
+    }
+    safety++;
+  }
+
+  return result;
+}
+
+function fixExponentSpacing(input: string): string {
+  return input
+    .replace(/([a-zA-Z0-9])\s*\n\s*(\d)/g, "$1^{$2}")
+    .replace(/([a-zA-Z])\s+(\d)\s*([+\-=,;)\s])/g, "$1^{$2}$3")
+    .replace(/x\s*2\b/g, "x^{2}")
+    .replace(/x\s*3\b/g, "x^{3}")
+    .replace(/(\w)\s*\^\s*(\w)\s*(\w)/g, (match, base, exp1, exp2) => {
+      if (/[0-9]/.test(exp1) && /[0-9]/.test(exp2)) return `${base}^{${exp1}${exp2}}`;
+      return match;
+    });
+}
+
+function fixDxDyOrder(input: string): string {
+  return input
+    .replace(/\b(dy|dx)\s*\/\s*(dy|dx)\b/g, (match, top, bottom) => {
+      return `\\frac{${top}}{${bottom}}`;
+    })
+    .replace(/\\frac\{dx\}\{dy\}/g, "\\frac{dx}{dy}")
+    .replace(/\\frac\{dy\}\{dx\}/g, "\\frac{dy}{dx}");
+}
+
+function removeDoubleDollar(input: string): string {
+  return input
+    .replace(/\$\$([^$]+?)\$\$/g, "\\[$1\\]")
+    .replace(/\$([^$\n]+?)\$/g, "\\($1\\)");
 }
 
 function hasCjk(value: string) {
@@ -257,7 +313,7 @@ function wrapBareMathInText(input: string) {
 }
 
 function normalizeMathBlocks(value: string) {
-  return splitMathSegments(repairBrokenSyntax(value))
+  let result = splitMathSegments(repairBrokenSyntax(value))
     .map((segment) => (segment.math ? normalizeExistingMath(segment.value) : wrapBareMathInText(segment.value)))
     .join("")
     .replace(/\$\$([,，。；;:：])/g, "$1")
@@ -266,6 +322,12 @@ function normalizeMathBlocks(value: string) {
     .replace(/^\s*\${1,2}\s*$/gm, "")
     .replace(/\$\s+\$/g, "")
     .trim();
+
+  result = fixUnclosedFrac(result);
+  result = fixExponentSpacing(result);
+  result = fixDxDyOrder(result);
+
+  return result;
 }
 
 export function normalizeLatexText(input: string) {
@@ -273,3 +335,62 @@ export function normalizeLatexText(input: string) {
 }
 
 export const fixLatex = normalizeLatexText;
+
+export type LatexIntegrityResult = {
+  ok: boolean;
+  needsRepair: boolean;
+  errors: string[];
+};
+
+export function checkLatexIntegrity(text: string): LatexIntegrityResult {
+  const errors: string[] = [];
+  const mathText = String(text || "");
+
+  let braceDepth = 0;
+  for (const ch of mathText) {
+    if (ch === "{") braceDepth++;
+    if (ch === "}") braceDepth--;
+    if (braceDepth < 0) {
+      errors.push("大括号不匹配：多余的 }");
+      break;
+    }
+  }
+  if (braceDepth > 0) errors.push("大括号不匹配：缺少 }");
+  if (braceDepth < 0) errors.push("大括号不匹配：多余的 }");
+
+  const inlineOpen = (mathText.match(/\\\(/g) || []).length;
+  const inlineClose = (mathText.match(/\\\)/g) || []).length;
+  if (inlineOpen !== inlineClose) errors.push("\\( \\) 不匹配");
+
+  const displayOpen = (mathText.match(/\\\[/g) || []).length;
+  const displayClose = (mathText.match(/\\\]/g) || []).length;
+  if (displayOpen !== displayClose) errors.push("\\[ \\] 不匹配");
+
+  const dollarPairs = (mathText.match(/\$\$/g) || []).length;
+  if (dollarPairs % 2 !== 0) errors.push("$$ 不成对");
+
+  if (/\\frac\{[^}]*$/.test(mathText)) errors.push("存在残缺 \\frac");
+  if (/\\frac\{[^{}]*\}(?!\{)/.test(mathText) && !/\\frac\{[^{}]*\}\{/.test(mathText)) errors.push("存在未闭合 \\frac");
+
+  return {
+    ok: errors.length === 0,
+    needsRepair: errors.length > 0,
+    errors
+  };
+}
+
+export function normalizeMathText(text: string): { value: string; needsRepair: boolean } {
+  const normalized = normalizeLatexText(text);
+  const integrity = checkLatexIntegrity(normalized);
+
+  if (integrity.needsRepair) {
+    const repaired = normalizeLatexText(
+      normalized
+        .replace(/\\frac\{([^{}]*)\}(?!\{)/g, "\\frac{$1}{\\cdot}")
+    );
+    const recheck = checkLatexIntegrity(repaired);
+    return { value: repaired, needsRepair: !recheck.ok };
+  }
+
+  return { value: normalized, needsRepair: false };
+}

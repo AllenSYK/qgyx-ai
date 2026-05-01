@@ -232,9 +232,29 @@ export async function createAnalysisPdf({
   drawSection(labels.detectedText, original?.detectedText);
   drawSection(labels.originalExplanation, original?.explanation);
   drawSection(labels.keySteps, (original?.keySteps || []).map((step, index) => `${index + 1}. ${step}`).join("\n"));
+
+  if (original?.steps && original.steps.length > 0) {
+    drawHeading(labels.detailedSteps, 14);
+    original.steps.forEach((step, index) => {
+      drawParagraph(`${index + 1}. ${step.title}`);
+      drawParagraph(step.content);
+      if (step.formula) {
+        drawParagraph(`  ${labels.formula}: ${step.formula}`);
+      }
+    });
+  }
+
+  if (original?.formulas && original.formulas.length > 0) {
+    drawSection(labels.formulas, original.formulas.join("\n"));
+  }
+
   drawSection(labels.finalAnswer, original?.finalAnswer);
   drawSection(labels.topic, `${original?.subject || "-"} / ${original?.topic || "-"}`);
   drawSection(labels.commonMistake, original?.commonMistake);
+
+  if (original?.warnings && original.warnings.length > 0) {
+    drawSection(labels.warnings, original.warnings.join("\n"));
+  }
 
   if (quiz?.questions?.length) {
     drawHeading(labels.quiz, 18);
@@ -264,9 +284,13 @@ function getPdfLabels(language: AppLanguage) {
       detectedText: "Detected Text",
       originalExplanation: "Original Explanation",
       keySteps: "Key Steps",
+      detailedSteps: "Detailed Steps",
+      formula: "Formula",
+      formulas: "Key Formulas",
       finalAnswer: "Final Answer",
       topic: "Topic",
       commonMistake: "Common Mistake",
+      warnings: "Warnings",
       quiz: "Quiz Practice",
       question: "Question",
       userAnswer: "Your answer",
@@ -285,9 +309,13 @@ function getPdfLabels(language: AppLanguage) {
     detectedText: "原题识别内容",
     originalExplanation: "原题解析",
     keySteps: "解题步骤",
+    detailedSteps: "详细推导步骤",
+    formula: "公式",
+    formulas: "关键公式",
     finalAnswer: "最终答案",
     topic: "知识点",
     commonMistake: "易错提醒",
+    warnings: "温馨提示",
     quiz: "Quiz 练习",
     question: "题目",
     userAnswer: "你的答案",

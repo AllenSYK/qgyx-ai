@@ -14,6 +14,15 @@ function cleanTextArray(value: string[] | undefined) {
   return value?.map(cleanText);
 }
 
+function cleanSteps(steps: OriginalExplanation["steps"]) {
+  if (!Array.isArray(steps)) return [];
+  return steps.map((s) => ({
+    title: cleanText(s.title),
+    content: cleanText(s.content),
+    formula: cleanText(s.formula || "")
+  }));
+}
+
 export function cleanOriginalExplanationMath(value: OriginalExplanation): OriginalExplanation {
   return {
     ...value,
@@ -26,7 +35,10 @@ export function cleanOriginalExplanationMath(value: OriginalExplanation): Origin
     knowledgePoints: cleanTextArray(value.knowledgePoints),
     finalAnswer: cleanText(value.finalAnswer),
     commonMistake: cleanText(value.commonMistake),
-    similarIdeas: value.similarIdeas.map(cleanText)
+    similarIdeas: value.similarIdeas.map(cleanText),
+    steps: cleanSteps(value.steps),
+    formulas: cleanTextArray(value.formulas) || [],
+    warnings: value.warnings || []
   };
 }
 

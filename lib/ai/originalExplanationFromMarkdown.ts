@@ -148,6 +148,9 @@ export function markdownFromOriginalExplanation(original: OriginalExplanation, l
   const knowledgePoints = Array.isArray(original.knowledgePoints) ? original.knowledgePoints.filter(Boolean) : [];
   const similarIdeas = Array.isArray(original.similarIdeas) ? original.similarIdeas.filter(Boolean) : [];
   const commonMistake = String(original.commonMistake || "").trim();
+  const steps = Array.isArray(original.steps) ? original.steps : [];
+  const formulas = Array.isArray(original.formulas) ? original.formulas : [];
+  const warnings = Array.isArray(original.warnings) ? original.warnings : [];
 
   return cleanAnalysisMarkdown(
     [
@@ -157,6 +160,16 @@ export function markdownFromOriginalExplanation(original: OriginalExplanation, l
       `## ${labels.explanation}`,
       original.explanation,
       "",
+      steps.length ? `## ${outputLanguage === "en" ? "Detailed Steps" : "详细步骤"}` : "",
+      ...steps.map((step, i) => {
+        const lines = [`${i + 1}. **${step.title}**: ${step.content}`];
+        if (step.formula) lines.push(`   ${outputLanguage === "en" ? "Formula" : "公式"}: ${step.formula}`);
+        return lines.join("\n");
+      }),
+      "",
+      formulas.length ? `## ${outputLanguage === "en" ? "Key Formulas" : "关键公式"}` : "",
+      ...formulas.map((f) => `- ${f}`),
+      "",
       knowledgePoints.length ? `## ${labels.knowledge}` : "",
       ...knowledgePoints.slice(0, 4).map((point) => `- ${point}`),
       "",
@@ -164,7 +177,10 @@ export function markdownFromOriginalExplanation(original: OriginalExplanation, l
       commonMistake ? `- ${commonMistake}` : "",
       "",
       similarIdeas.length ? `## ${labels.similar}` : "",
-      ...similarIdeas.slice(0, 2).map((idea) => `- ${idea}`)
+      ...similarIdeas.slice(0, 2).map((idea) => `- ${idea}`),
+      "",
+      warnings.length ? `## ${outputLanguage === "en" ? "Note" : "温馨提示"}` : "",
+      ...warnings.map((w) => `- ${w}`)
     ]
       .filter((line, index, items) => line || (items[index - 1] && items[index + 1]))
       .join("\n"),
@@ -207,6 +223,9 @@ export function createOriginalExplanationFromMarkdown(markdown: string, language
     keySteps,
     knowledgePoints,
     commonMistake: mistakeItems.join("\n"),
-    similarIdeas
+    similarIdeas,
+    steps: [],
+    formulas: [],
+    warnings: []
   };
 }

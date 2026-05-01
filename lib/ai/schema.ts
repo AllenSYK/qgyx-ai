@@ -3,6 +3,12 @@ import { z } from "zod";
 export const DifficultySchema = z.enum(["easy", "medium", "hard"]);
 export const AnswerLetterSchema = z.enum(["A", "B", "C", "D"]);
 
+export const StepSchema = z.object({
+  title: z.string().min(1),
+  content: z.string().min(1),
+  formula: z.string().optional().default("")
+});
+
 export const OriginalExplanationSchema = z
   .object({
     title: z.string().min(1),
@@ -15,7 +21,10 @@ export const OriginalExplanationSchema = z
     knowledgePoints: z.array(z.string().min(1)).min(1).max(4).optional(),
     finalAnswer: z.string().min(1),
     commonMistake: z.string().min(1),
-    similarIdeas: z.array(z.string().min(1)).min(1).max(3)
+    similarIdeas: z.array(z.string().min(1)).min(1).max(3),
+    steps: z.array(StepSchema).optional().default([]),
+    formulas: z.array(z.string()).optional().default([]),
+    warnings: z.array(z.string()).optional().default([])
   })
   .strict();
 
@@ -72,7 +81,10 @@ export const ORIGINAL_EXPLANATION_JSON_SHAPE = `{
   "keySteps": [],
   "knowledgePoints": [],
   "commonMistake": "",
-  "similarIdeas": []
+  "similarIdeas": [],
+  "steps": [{"title": "", "content": "", "formula": ""}],
+  "formulas": [],
+  "warnings": []
 }`;
 
 export const QUIZ_JSON_SHAPE = `{

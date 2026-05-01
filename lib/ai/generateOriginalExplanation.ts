@@ -86,7 +86,10 @@ ${userId || "anonymous"}`
     finalAnswer: UNRECOGNIZABLE_QUESTION_MARKER,
     commonMistake: UNRECOGNIZABLE_QUESTION_MARKER,
     knowledgePoints: [UNRECOGNIZABLE_QUESTION_MARKER],
-    similarIdeas: ["改变条件后沿用同一知识点和解题步骤"]
+    similarIdeas: ["改变条件后沿用同一知识点和解题步骤"],
+    steps: [],
+    formulas: [],
+    warnings: []
   };
 
   let rawText = "";

@@ -10,7 +10,26 @@ export const DEEPSEEK_BASE_URL =
   process.env.DASHSCOPE_BASE_URL ||
   QWEN_BASE_URL;
 
-export const QWEN_VL_MODEL = process.env.QWEN_VL_MODEL || "qwen3-vl-flash";
+export const QWEN_VL_FLASH_MODEL = process.env.QWEN_VL_FLASH_MODEL || process.env.QWEN_VL_MODEL || "qwen3-vl-flash";
+export const QWEN_VL_PLUS_MODEL = process.env.QWEN_VL_PLUS_MODEL || "qwen3-vl-plus";
+export const QWEN_VL_MODEL = QWEN_VL_FLASH_MODEL;
+
+export type MembershipTier = "free" | "pro" | "max";
+
+export function getVisionModelForTier(tier: MembershipTier): string {
+  switch (tier) {
+    case "pro":
+    case "max":
+      return QWEN_VL_PLUS_MODEL;
+    default:
+      return QWEN_VL_FLASH_MODEL;
+  }
+}
+
+export function shouldEnableThinking(tier: MembershipTier, isComplex: boolean): boolean {
+  if (tier === "max" && isComplex) return true;
+  return false;
+}
 
 export const DEEPSEEK_MODEL =
   process.env.DEEPSEEK_MODEL ||
@@ -99,7 +118,7 @@ export function getQwenModelName() {
 }
 
 function isQwenModel(model: string) {
-  return model === QWEN_VL_MODEL || /^qwen/i.test(model);
+  return model === QWEN_VL_FLASH_MODEL || model === QWEN_VL_PLUS_MODEL || /^qwen/i.test(model);
 }
 
 function resolveProvider(model: string) {
@@ -145,7 +164,7 @@ function mapAiHttpError(status: number, rawText: string) {
   }
 
   if (status === 404 || /model.*not.*found|model.*does.*not.*exist|模型.*不存在|not support/.test(lower)) {
-    return "模型不存在或不支持图片，请确认 QWEN_VL_MODEL 是否为 qwen3-vl-flash。";
+    return "模型不存在或不支持图片，请确认 QWEN_VL_FLASH_MODEL 或 QWEN_VL_PLUS_MODEL 配置是否正确。";
   }
 
   if (status === 413 || /payload too large|request entity too large|image.*large|图片.*大/.test(lower)) {

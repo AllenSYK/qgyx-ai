@@ -15,10 +15,14 @@ import {
 import {
   AiConfigurationError,
   AiTimeoutError,
-  QWEN_VL_MODEL,
+  getVisionModelForTier,
+  shouldEnableThinking,
   collectQwenStreamText,
-  type ChatMessage
+  type ChatMessage,
+  type MembershipTier
 } from "@/lib/ai/qwen";
+import { detectComplexMathQuestion } from "@/lib/ai/complexMathDetection";
+import { validateMathAnswer, shouldValidateForTier } from "@/lib/ai/mathValidation";
 import { mathOutputInstruction, normalizeLanguage, type AppLanguage } from "@/lib/language";
 
 const IMAGE_NOT_CLEAR = "IMAGE_NOT_CLEAR";
@@ -38,6 +42,25 @@ function normalizeVisionExplanation(value: OriginalExplanation): OriginalExplana
       ? value.knowledgePoints
       : [value.topic].filter(Boolean);
 
+  const steps = Array.isArray(value.steps)
+    ? value.steps
+        .filter((s) => s && s.title && s.content)
+        .map((s) => ({
+          title: trimText(s.title, 100),
+          content: trimText(s.content, 500),
+          formula: trimText(s.formula || "", 200)
+        }))
+        .slice(0, 6)
+    : [];
+
+  const formulas = Array.isArray(value.formulas)
+    ? value.formulas.map((f) => trimText(f, 200)).filter(Boolean).slice(0, 8)
+    : [];
+
+  const warnings = Array.isArray(value.warnings)
+    ? value.warnings.map((w) => trimText(w, 300)).filter(Boolean).slice(0, 4)
+    : [];
+
   return {
     ...value,
     title: trimText(value.title, 120),
@@ -49,7 +72,10 @@ function normalizeVisionExplanation(value: OriginalExplanation): OriginalExplana
     keySteps: value.keySteps.map((item) => trimText(item, 500)).filter(Boolean).slice(0, 4),
     knowledgePoints: knowledgePoints.map((item) => trimText(item, 120)).filter(Boolean).slice(0, 4),
     commonMistake: trimText(value.commonMistake, 600),
-    similarIdeas: value.similarIdeas.map((item) => trimText(item, 500)).filter(Boolean).slice(0, 3)
+    similarIdeas: value.similarIdeas.map((item) => trimText(item, 500)).filter(Boolean).slice(0, 3),
+    steps,
+    formulas,
+    warnings
   };
 }
 
@@ -76,7 +102,10 @@ function createFallback(language: AppLanguage): OriginalExplanation {
     keySteps: [marker],
     knowledgePoints: [marker],
     commonMistake: marker,
-    similarIdeas: [marker]
+    similarIdeas: [marker],
+    steps: [],
+    formulas: [],
+    warnings: []
   };
 }
 
@@ -105,37 +134,69 @@ function buildMessages({
   mimeType,
   imageSummary,
   language,
-  retry
+  retry,
+  tier,
+  isComplex
 }: {
   base64: string;
   mimeType: string;
   imageSummary?: string;
   language: AppLanguage;
   retry: boolean;
+  tier: MembershipTier;
+  isComplex: boolean;
 }): ChatMessage[] {
   const outputLanguage = outputLanguageText(language);
-  const mathRule = `所有输出要像考试试卷：detectedText、finalAnswer、explanation、keySteps、commonMistake、knowledgePoints、similarIdeas 中凡是可以用数学形式表达的内容，都必须写成标准数学形式。
+  const mathRule = `所有输出要像考试试卷：detectedText、finalAnswer、explanation、keySteps、commonMistake、knowledgePoints、similarIdeas、steps、formulas 中凡是可以用数学形式表达的内容，都必须写成标准数学形式。
 ${mathOutputInstruction}
 `;
 
+  const completenessRule = isComplex
+    ? `数学推导必须完整，不能停在中间式。例如得到 12x^4 + 5x^2 - 2 = 0 后必须继续解出 x 和 y 值。steps 中每个步骤必须包含 title、content 和 formula。formulas 数组必须包含推导中用到的所有关键公式。`
+    : “”;
+
   const system = retry
-    ? `你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。不要输出 Markdown、思考过程、自我纠错或兜底废话。${mathRule}keySteps<=4，knowledgePoints<=4，similarIdeas<=2。输出语言：${outputLanguage}。`
-    : `你是拍题解析助手。请直接识别并解析图片中的真实题目，只输出 JSON。看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、自我检查、自我纠错、<think> 标签。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别”等兜底话术。解析要短，只保留关键步骤；${mathRule}keySteps<=4，knowledgePoints<=4，similarIdeas<=2。输出语言：${outputLanguage}。`;
+    ? `你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 {“error”:”${IMAGE_NOT_CLEAR}”}。不要输出 Markdown、思考过程、自我纠错或兜底废话。${mathRule}${completenessRule}keySteps<=4，knowledgePoints<=4，similarIdeas<=2，steps 最多 6 步。输出语言：${outputLanguage}。`
+    : `你是拍题解析助手。请直接识别并解析图片中的真实题目，只输出 JSON。看不清具体题目时只输出 {“error”:”${IMAGE_NOT_CLEAR}”}。禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、自我检查、自我纠错、<think> 标签。禁止输出”图片复杂、根据可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别”等兜底话术。解析要短，只保留关键步骤；${mathRule}${completenessRule}keySteps<=4，knowledgePoints<=4，similarIdeas<=2，steps 最多 6 步。输出语言：${outputLanguage}。`;
+
+  if (tier === “max” && isComplex) {
+    return [
+      {
+        role: “system”,
+        content: `${system}\n你是专业数学解析助手，需要进行严格的逐步推导验证。每一步推导必须逻辑严密，最终答案必须与推导过程一致。\nJSON 字段：\n${ORIGINAL_EXPLANATION_JSON_SHAPE}`
+      },
+      {
+        role: “user”,
+        content: [
+          {
+            type: “text”,
+            text: `请识别并解析图片中的数学题目。要求：1) 完整推导不能省略中间步骤 2) 每步写出所用公式 3) 最终答案必须与推导一致 4) 如果发现常见易错点务必标注。图像摘要：${imageSummary || “无”}`
+          },
+          {
+            type: “image_url”,
+            image_url: {
+              url: `data:${mimeType};base64,${base64}`
+            }
+          }
+        ]
+      }
+    ];
+  }
 
   return [
     {
-      role: "system",
+      role: “system”,
       content: `${system}\nJSON 字段：\n${ORIGINAL_EXPLANATION_JSON_SHAPE}`
     },
     {
-      role: "user",
+      role: “user”,
       content: [
         {
-          type: "text",
-          text: `请识别并解析图片里的题目。只关注题干、公式、图形、表格、选项和答案推导；不要描述截图界面或 OCR 过程。图像摘要：${imageSummary || "无"}`
+          type: “text”,
+          text: `请识别并解析图片里的题目。只关注题干、公式、图形、表格、选项和答案推导；不要描述截图界面或 OCR 过程。图像摘要：${imageSummary || “无”}`
         },
         {
-          type: "image_url",
+          type: “image_url”,
           image_url: {
             url: `data:${mimeType};base64,${base64}`
           }
@@ -145,20 +206,23 @@ ${mathOutputInstruction}
   ];
 }
 
-async function requestVisionExplanation(messages: ChatMessage[]) {
+async function requestVisionExplanation(
+  messages: ChatMessage[],
+  model: string,
+  enableThinking: boolean
+) {
+  const maxTokens = enableThinking ? 2400 : 1200;
   return collectQwenStreamText(
     {
-      model: QWEN_VL_MODEL || "qwen3-vl-flash",
+      model,
       messages,
       temperature: 0.05,
-      enable_thinking: false,
-      max_tokens: 1200
+      enable_thinking: enableThinking,
+      max_tokens: maxTokens
     },
     {
-      // 关键：不要像之前一样 15 秒首 token 超时就杀掉。
-      // Chatbox 类似逻辑：建立流式连接后等待模型输出。
       firstTokenTimeoutMs: 0,
-      totalTimeoutMs: 180000
+      totalTimeoutMs: enableThinking ? 240000 : 180000
     }
   );
 }
@@ -187,17 +251,23 @@ export async function generateOriginalExplanationFromImage({
   mimeType,
   imageSummary,
   language = "zh",
-  userId
+  userId,
+  tier = "free"
 }: {
   base64: string;
   mimeType: string;
   imageSummary?: string;
   language?: AppLanguage;
   userId?: string;
+  tier?: MembershipTier;
 }): Promise<OriginalExplanation> {
   const outputLanguage = normalizeLanguage(language);
   const fallback = createFallback(outputLanguage);
   let lastError: unknown = null;
+
+  const model = getVisionModelForTier(tier);
+  const isComplex = false;
+  const enableThinking = shouldEnableThinking(tier, isComplex);
 
   for (const retry of [false, true]) {
     try {
@@ -207,11 +277,38 @@ export async function generateOriginalExplanationFromImage({
           mimeType,
           imageSummary,
           language: outputLanguage,
-          retry
-        })
+          retry,
+          tier,
+          isComplex
+        }),
+        model,
+        enableThinking
       );
 
-      return await parseVisionExplanation(rawText, fallback);
+      const parsed = await parseVisionExplanation(rawText, fallback);
+
+      if (shouldValidateForTier(tier)) {
+        const questionText = parsed.detectedText || "";
+        const isActuallyComplex = detectComplexMathQuestion(questionText);
+
+        if (isActuallyComplex) {
+          const validation = validateMathAnswer(questionText, parsed, tier);
+          if (validation.needsRetry && !retry) {
+            console.warn("Math validation flagged issues, retrying with stricter prompt", {
+              warnings: validation.warnings
+            });
+            continue;
+          }
+          if (validation.warnings.length > 0) {
+            return {
+              ...parsed,
+              warnings: [...(parsed.warnings || []), ...validation.warnings]
+            };
+          }
+        }
+      }
+
+      return parsed;
     } catch (error) {
       lastError = error;
 
@@ -231,6 +328,7 @@ export async function generateOriginalExplanationFromImage({
 
   console.error("generate_original_explanation_from_image_failed", {
     user_id: userId || null,
+    tier,
     error: lastError instanceof Error ? lastError.message : "unknown"
   });
 

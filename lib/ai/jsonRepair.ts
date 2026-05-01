@@ -110,7 +110,10 @@ const ARRAY_FIELD_LIMITS = {
   questions: 4,
   options: 4,
   commonMistakes: 6,
-  suggestions: 6
+  suggestions: 6,
+  steps: 6,
+  formulas: 8,
+  warnings: 4
 } as const;
 
 function arrayItemToString(item: unknown) {
@@ -204,10 +207,42 @@ function normalizeAiJsonValue(value: unknown): unknown {
       continue;
     }
 
+    if (key === "steps") {
+      normalized[key] = normalizeStepsArray(item);
+      continue;
+    }
+
+    if (key === "formulas") {
+      normalized[key] = normalizeStringArray(item, ARRAY_FIELD_LIMITS.formulas);
+      continue;
+    }
+
+    if (key === "warnings") {
+      normalized[key] = normalizeStringArray(item, ARRAY_FIELD_LIMITS.warnings);
+      continue;
+    }
+
     normalized[key] = normalizeAiJsonValue(item);
   }
 
   return normalized;
+}
+
+function normalizeStepsArray(value: unknown) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .slice(0, ARRAY_FIELD_LIMITS.steps)
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const obj = item as Record<string, unknown>;
+      return {
+        title: typeof obj.title === "string" ? fixLatex(obj.title) : "",
+        content: typeof obj.content === "string" ? fixLatex(obj.content) : "",
+        formula: typeof obj.formula === "string" ? fixLatex(obj.formula) : ""
+      };
+    })
+    .filter((s): s is { title: string; content: string; formula: string } => s !== null && s.title.length > 0 && s.content.length > 0);
 }
 
 function isBlankString(value: unknown) {
@@ -415,4 +450,37 @@ export function assertParsed<T>(result: ParseResult<T>): T {
   }
 
   return result.data;
+}
+
+const MAX_REPAIR_RETRIES = Number(process.env.AI_MAX_REPAIR_RETRY || 2);
+
+export async function repairAIJson<T>(
+  rawOutput: string,
+  schema: z.ZodType<T>,
+  schemaDescription: string,
+  fallback: T
+): Promise<T> {
+  const firstAttempt = await parseAndValidateJson(rawOutput, schema, schemaDescription);
+  if (firstAttempt.success) return firstAttempt.data;
+
+  for (let retry = 0; retry < MAX_REPAIR_RETRIES; retry++) {
+    try {
+      const repairedRaw = await repairJsonWithAI(
+        rawOutput,
+        firstAttempt.error,
+        schemaDescription
+      );
+      const result = await parseAndValidateJson(repairedRaw, schema, schemaDescription);
+      if (result.success) return result.data;
+    } catch {
+      continue;
+    }
+  }
+
+  console.warn("repairAIJson: all retries exhausted, returning fallback");
+  return fallback;
+}
+
+export function safeFallbackJson<T>(fallback: T): T {
+  return fallback;
 }
