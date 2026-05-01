@@ -12,24 +12,24 @@ type MarkdownRendererProps = {
   as?: "span" | "div" | "p" | "h3";
 };
 
-function stripThinkingText(input: string) {
+function stripReasoning(input: string) {
   let text = String(input || "");
 
   text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
   text = text.replace(/<think>[\s\S]*$/gi, "");
 
   text = text.replace(
-    /(^|\n)#{0,6}\s*(思考过程|推理过程|推理草稿|内部思考|内部推理|Thinking|Reasoning|Chain of Thought|Analysis)\s*[:：]?\s*[\s\S]*?(?=\n#{1,6}\s*(题目|答案|解析|涉及知识点|知识点|易错点|类似题目思路)|$)/gi,
+    /(^|\n)#{0,6}\s*(思考过程|推理过程|推理草稿|内部思考|内部推理|Thinking|Reasoning|Chain of Thought|Internal Reasoning)\s*[:：]?\s*[\s\S]*?(?=\n#{1,6}\s*(题目|答案|解析|涉及知识点|知识点|易错点|类似题目思路|Question|Answer|Explanation|Key Points|Common Mistakes|Similar Ideas)|$)/gi,
     "$1"
   );
 
-  text = text.replace(/^\s*(让我先思考|我先分析|我们先分析|思路如下|推理如下|Thinking:|Reasoning:).*$/gim, "");
+  text = text.replace(/^\s*(Thinking:|Reasoning:|Let me think|I will analyze|让我先思考|我先分析|我们先分析).*$/gim, "");
 
   return text.trim();
 }
 
 export default function MarkdownRenderer({ text, className, as = "div" }: MarkdownRendererProps) {
-  const content = normalizeLatexText(stripThinkingText(String(text || "")));
+  const content = normalizeLatexText(stripReasoning(String(text || "")));
   const inline = as === "span";
   const Wrapper = as;
 

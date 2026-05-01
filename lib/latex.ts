@@ -1,14 +1,14 @@
 ﻿const LATEX_COMMANDS =
-  "frac|sqrt|left|right|cdot|times|Rightarrow|Leftarrow|rightarrow|leftarrow|le|ge|neq|approx|sin|cos|tan|arcsin|arccos|arctan|ln|log|pi|theta|alpha|beta|gamma|Delta|delta|lambda|mu|rho|sigma|omega|vec|mathbf|overline|angle|triangle|int|sum|lim|text";
+  "frac|sqrt|left|right|cdot|times|Rightarrow|Leftarrow|rightarrow|leftarrow|le|ge|neq|approx|sin|cos|tan|arcsin|arccos|arctan|ln|log|pi|theta|alpha|beta|gamma|Delta|delta|lambda|mu|rho|sigma|omega|vec|mathbf|overline|boxed|angle|triangle|int|sum|lim|text";
 
 function repairBrokenSyntax(input: string) {
   return String(input || "")
-    .replace(/\\\$/g, "$")
+    .replace(/\r\n/g, "\n")
     .replace(/\\\(/g, "$")
     .replace(/\\\)/g, "$")
     .replace(/\\\[/g, "$$")
     .replace(/\\\]/g, "$$")
-    .replace(/\r\n/g, "\n")
+    .replace(/\\\$/g, "$")
     .replace(/\${3,}/g, "$$")
     .replace(/\\frac\s*\$+\s*\{([^{}\n]+)\}\s*\{([^{}\n]+)\}/g, "\\frac{$1}{$2}")
     .replace(/\\frac\{([^{}\n]+)\}\s*\$+\s*\{([^{}\n]+)\}/g, "\\frac{$1}{$2}")
@@ -18,8 +18,8 @@ function repairBrokenSyntax(input: string) {
     .replace(/\\frac\s*([A-Za-z0-9])\s*\{([^{}\n]+)\}/g, "\\frac{$1}{$2}")
     .replace(/\\sqrt\s*\$+\s*\{([^{}\n]+)\}/g, "\\sqrt{$1}")
     .replace(/\\sqrt\s*\(([^()\n]+)\)/g, "\\sqrt{$1}")
-    .replace(/\\([a-zA-Z]+)\s*\$+(?=\{|\(|\[|\\|[A-Za-z0-9])/g, "\\$1")
-    .replace(/\$+(\\(?:Rightarrow|Leftarrow|rightarrow|leftarrow|cdot|times|le|ge|neq|approx)\b)/g, "$1")
+    .replace(/\\boxed\s*\$+\s*\{([^{}\n]+)\}/g, "\\boxed{$1}")
+    .replace(/\\text\s*\$+\s*\{([^{}\n]+)\}/g, "\\text{$1}")
     .replace(/(\})\$+(\\(?:Rightarrow|Leftarrow|rightarrow|leftarrow|cdot|times|le|ge|neq|approx|frac|sqrt|left|right)\b)/g, "$1 $2")
     .replace(/\$+(?=\})/g, "")
     .replace(/\$+\s*([,，。；;:：)）])/g, "$1")
@@ -28,19 +28,24 @@ function repairBrokenSyntax(input: string) {
     .trim();
 }
 
-function convertInlineDisplayDollars(line: string) {
-  const trimmed = line.trim();
-
-  if (trimmed.startsWith("$$") && trimmed.endsWith("$$") && trimmed.length > 4) {
-    return line;
-  }
-
-  // AI 经常把 $$ 放进中文句子里，这里把它降级成普通待修复文本。
-  return line.replace(/\$\$/g, "");
+function hasCjk(value: string) {
+  return /[\u4e00-\u9fff]/.test(value);
 }
 
-function hasChinese(value: string) {
-  return /[\u4e00-\u9fff]/.test(value);
+function normalizeInlineDoubleDollar(line: string) {
+  const t = line.trim();
+
+  if (t.startsWith("$$") && t.endsWith("$$") && t.length > 4) {
+    const inner = t.slice(2, -2).trim();
+    if (inner && !hasCjk(inner)) {
+      return line;
+    }
+  }
+
+  return line.replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula: string) => {
+    const clean = repairBrokenSyntax(formula).trim();
+    return clean ? `$${clean}$` : "";
+  });
 }
 
 function protectExistingMath(input: string, transform: (value: string) => string) {
@@ -77,33 +82,23 @@ function normalizePlainMath(value: string) {
     );
 }
 
-function stripBrokenLooseDollars(value: string) {
-  const dollarCount = (value.match(/\$/g) || []).length;
-
-  if (dollarCount % 2 === 1) {
-    return value.replace(/\$/g, "");
-  }
-
-  return value;
+function stripLooseDollars(value: string) {
+  const count = (value.match(/\$/g) || []).length;
+  return count % 2 === 1 ? value.replace(/\$/g, "") : value;
 }
 
 function wrapMath(value: string) {
   const clean = repairBrokenSyntax(value).trim();
-
   if (!clean) return value;
   if (clean.startsWith("$") && clean.endsWith("$")) return clean;
-
   return `$${clean}$`;
 }
 
 function looksLikeStandaloneMath(line: string) {
-  const clean = line
-    .replace(/^[-*]\s*/, "")
-    .replace(/^#+\s*/, "")
-    .trim();
+  const clean = line.replace(/^[-*]\s*/, "").replace(/^#+\s*/, "").trim();
 
   if (!clean) return false;
-  if (hasChinese(clean)) return false;
+  if (hasCjk(clean)) return false;
 
   return (
     new RegExp(`\\\\(?:${LATEX_COMMANDS})`).test(clean) ||
@@ -112,10 +107,9 @@ function looksLikeStandaloneMath(line: string) {
   );
 }
 
-function wrapChineseLineMath(line: string) {
+function wrapLineMath(line: string) {
   let next = line;
 
-  // 整段坐标/区间/角度括号：\left( ... \right)
   next = next.replace(
     /(\\left\s*[\(\[\{.][^，。；;\n]*?\\right\s*[\)\]\}.])/g,
     (match) => wrapMath(match)
@@ -124,45 +118,40 @@ function wrapChineseLineMath(line: string) {
   return protectExistingMath(next, (text) => {
     let wrapped = text;
 
-    // 长公式：从 \frac/\sin/\cos/\angle 等开始，到中文标点前结束
     wrapped = wrapped.replace(
-      new RegExp(`((?:\\\\(?:${LATEX_COMMANDS})|[A-Za-z0-9_.{}()[\\]\\\\+\\-*/=<>\\s])+\\\\(?:${LATEX_COMMANDS})(?:[A-Za-z0-9_.{}()[\\]\\\\+\\-*/=<>\\s])*)`, "g"),
-      (match) => {
-        const clean = match.trim();
-        if (clean.length < 2) return match;
-        if (!/[\\=+\-*/^_<>]/.test(clean)) return match;
-        return wrapMath(clean);
-      }
-    );
-
-    // 裸 \frac{a}{b}、\sqrt{x}、\text{cm}
-    wrapped = wrapped.replace(
-      /(\\frac\{[^{}\n]+\}\{[^{}\n]+\}|\\sqrt\{[^{}\n]+\}|\\text\{[^{}\n]+\}|\\vec\{[^{}\n]+\}|\\mathbf\{[^{}\n]+\}|\\overline\{[^{}\n]+\})/g,
+      /(\\frac\{[^{}\n]+\}\{[^{}\n]+\}|\\sqrt\{[^{}\n]+\}|\\boxed\{[^{}\n]+\}|\\text\{[^{}\n]+\}|\\vec\{[^{}\n]+\}|\\mathbf\{[^{}\n]+\}|\\overline\{[^{}\n]+\})/g,
       (match) => wrapMath(match)
     );
 
-    // 裸 \angle OAB、\pi、\Rightarrow、\cdot
     wrapped = wrapped.replace(
       new RegExp(`(\\\\(?:angle\\s*[A-Za-z0-9]+|${LATEX_COMMANDS})\\b(?:\\s*[A-Za-z0-9]+)?)`, "g"),
       (match) => wrapMath(match)
     );
 
-    // 中文中的等式：OB = 3.4、AB = 1.9、x = 0
     wrapped = wrapped.replace(
-      /([A-Za-z][A-Za-z0-9_]*\s*=\s*[^，。；、\n\u4e00-\u9fff]+)/g,
+      /([A-Za-z][A-Za-z0-9_()]*\s*=\s*[^，。；、\n\u4e00-\u9fff]+)/g,
       (match) => {
-        if (!/[=^+\-*/\\]/.test(match)) return match;
-        return wrapMath(match);
+        const clean = match.trim();
+        if (!/[=^+\-*/\\]/.test(clean)) return match;
+        return wrapMath(clean);
       }
     );
 
-    // 单变量数学/物理符号：x 轴、y 轴、F、v、m、a、k
+    wrapped = wrapped.replace(
+      /((?:\\[A-Za-z]+|[A-Za-z0-9_{}()[\]\\^+\-*/=.])+?(?:\\frac|\\sqrt|\\boxed|\\angle|\\pi|\\sin|\\cos|\\tan|\\Rightarrow|=)[A-Za-z0-9_{}()[\]\\^+\-*/=., ]*)/g,
+      (match) => {
+        const clean = match.trim();
+        if (!clean) return match;
+        if (hasCjk(clean)) return match;
+        return wrapMath(clean);
+      }
+    );
+
     wrapped = wrapped.replace(
       /(^|[\s（(，。；、])([A-Za-z])(?=\s*(?:轴|值|坐标|变量|参数|方向|取|为|=|交点|分量|速度|力|质量|加速度|常量|系数))/g,
       (_match, prefix: string, variable: string) => `${prefix}$${variable}$`
     );
 
-    // 幂次：x^2
     wrapped = wrapped.replace(
       /(^|[\s（(，。；、])([A-Za-z]\^[{]?[0-9A-Za-z+\-]+[}]?)/g,
       (_match, prefix: string, formula: string) => `${prefix}${wrapMath(formula)}`
@@ -172,41 +161,56 @@ function wrapChineseLineMath(line: string) {
   });
 }
 
+function cleanupBrokenClosers(text: string) {
+  return text
+    .replace(/\$\$([,，。；;:：])/g, "$1")
+    .replace(/([A-Za-z0-9}\)])\$\$(?=[,，。；;:：])/g, "$1")
+    .replace(/([A-Za-z0-9}\)])\$\$(?=\s*$)/gm, "$1")
+    .replace(/\$\$---/g, "---")
+    .replace(/\$\$\s*$/gm, "");
+}
+
 function normalizeLine(line: string) {
-  const noInlineDisplay = convertInlineDisplayDollars(line);
-  const repaired = stripBrokenLooseDollars(normalizePlainMath(repairBrokenSyntax(noInlineDisplay)));
+  const stage1 = normalizeInlineDoubleDollar(line);
+  const repaired = stripLooseDollars(normalizePlainMath(repairBrokenSyntax(stage1)));
 
   if (looksLikeStandaloneMath(repaired)) {
     const clean = repaired.replace(/\$/g, "").trim();
     return clean ? `$$${clean}$$` : repaired;
   }
 
-  return wrapChineseLineMath(repaired);
+  return wrapLineMath(repaired);
 }
 
 function normalizeMathBlocks(value: string) {
-  return value
-    .replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula: string) => {
-      const fixed = repairBrokenSyntax(formula).trim();
-      return fixed ? `$$${fixed}$$` : "";
-    })
-    .replace(/\$([^$\n]+)\$/g, (_match, formula: string) => {
-      const fixed = repairBrokenSyntax(formula).trim();
-      return fixed ? `$${fixed}$` : "";
-    })
-    .replace(/\$\$\s*\$\$/g, "")
-    .replace(/\$\s+\$/g, "");
+  return cleanupBrokenClosers(
+    value
+      .replace(/\$\$([\s\S]*?)\$\$/g, (_match, formula: string) => {
+        const fixed = repairBrokenSyntax(formula).trim();
+        if (!fixed) return "";
+        if (hasCjk(fixed)) return `$${fixed}$`;
+        return `$$${fixed}$$`;
+      })
+      .replace(/\$([^$\n]+)\$/g, (_match, formula: string) => {
+        const fixed = repairBrokenSyntax(formula).trim();
+        return fixed ? `$${fixed}$` : "";
+      })
+      .replace(/\$\$\s*\$\$/g, "")
+      .replace(/\$\s+\$/g, "")
+  );
 }
 
 export function normalizeLatexText(input: string) {
   const repaired = repairBrokenSyntax(input);
 
   const normalized = protectExistingMath(normalizeMathBlocks(repaired), (text) =>
-    text
-      .split("\n")
-      .map(normalizeLine)
-      .join("\n")
-      .trim()
+    cleanupBrokenClosers(
+      text
+        .split("\n")
+        .map(normalizeLine)
+        .join("\n")
+        .trim()
+    )
   );
 
   return normalizeMathBlocks(normalized);

@@ -66,7 +66,7 @@ type GenerationTaskContextValue = {
   updateTask: (patch: Partial<GenerationTaskState>) => void;
 };
 
-const STORAGE_KEY = "qgyx:generation-tasks-v11";
+const STORAGE_KEY = "qgyx:generation-tasks-v13";
 
 const initialTask: GenerationTaskState = {
   id: "",
@@ -219,11 +219,12 @@ function applyServerPayload(task: GenerationTaskState, payload: Record<string, u
     wrongExplanations: (payload.wrongExplanations as Record<string, unknown> | undefined) || task.wrongExplanations,
     analysisText: payloadAnalysisText || (analysis
       ? [
-          `题目识别：${analysis.recognizedText}`,
-          `正确答案：${analysis.answer}`,
-          `解析：${analysis.explanation}`,
-          `知识点：${analysis.knowledgePoints.join("、")}`
-        ].join("\n\n")
+          `## 答案\n${analysis.answer}`,
+          `## 解析\n${analysis.explanation}`,
+          analysis.knowledgePoints?.length ? `## 涉及知识点\n${analysis.knowledgePoints.map((item) => `- ${item}`).join("\n")}` : "",
+          analysis.commonMistakes ? `## 易错点\n${analysis.commonMistakes}` : "",
+          analysis.similarIdeas?.length ? `## 类似题目思路\n${analysis.similarIdeas.map((item) => `- ${item}`).join("\n")}` : ""
+        ].filter(Boolean).join("\n\n")
       : task.analysisText),
     remainingCredits:
       typeof payload.remainingCredits === "number" ? payload.remainingCredits : task.remainingCredits,
