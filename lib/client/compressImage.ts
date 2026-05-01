@@ -1,6 +1,7 @@
-const ONE_MB = 1024 * 1024;
-const MAX_EDGE = 1600;
-const JPEG_QUALITY = 0.88;
+﻿const ONE_MB = 1024 * 1024;
+const COMPRESS_THRESHOLD = 300 * 1024;
+const MAX_EDGE = 1280;
+const JPEG_QUALITY = 0.82;
 
 function isCompressibleImage(file: File) {
   return file.type.startsWith("image/") && !file.name.toLowerCase().endsWith(".pdf");
@@ -31,14 +32,14 @@ function loadImage(file: File) {
   });
 }
 
-function canvasToJpegBlob(canvas: HTMLCanvasElement) {
+function canvasToJpegBlob(canvas: HTMLCanvasElement, quality = JPEG_QUALITY) {
   return new Promise<Blob | null>((resolve) => {
-    canvas.toBlob((blob) => resolve(blob), "image/jpeg", JPEG_QUALITY);
+    canvas.toBlob((blob) => resolve(blob), "image/jpeg", quality);
   });
 }
 
 export async function compressImageForUpload(file: File) {
-  if (!isCompressibleImage(file) || file.size < ONE_MB) {
+  if (!isCompressibleImage(file) || file.size < COMPRESS_THRESHOLD) {
     return file;
   }
 
@@ -63,7 +64,18 @@ export async function compressImageForUpload(file: File) {
     context.imageSmoothingQuality = "high";
     context.drawImage(image, 0, 0, width, height);
 
-    const blob = await canvasToJpegBlob(canvas);
+    let blob = await canvasToJpegBlob(canvas, JPEG_QUALITY);
+
+    if (!blob) {
+      return file;
+    }
+
+    if (blob.size > ONE_MB) {
+      const smallerBlob = await canvasToJpegBlob(canvas, 0.74);
+      if (smallerBlob && smallerBlob.size < blob.size) {
+        blob = smallerBlob;
+      }
+    }
 
     if (!blob || blob.size >= file.size) {
       return file;

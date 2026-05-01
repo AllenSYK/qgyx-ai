@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
@@ -677,7 +677,7 @@ export default function UploadCard({
         </section>
       ) : null}
 
-      {task.analysis ? (
+      {task.analysis && !task.analysisText ? (
         <section className="rounded-[28px] border border-slate-200 bg-white/95 p-5 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur sm:p-7">
           <div className="mb-5">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
