@@ -65,7 +65,7 @@ type GenerationTaskContextValue = {
   updateTask: (patch: Partial<GenerationTaskState>) => void;
 };
 
-const STORAGE_KEY = "qgyx:generation-tasks-v7";
+const STORAGE_KEY = "qgyx:generation-tasks-v8";
 
 const initialTask: GenerationTaskState = {
   id: "",
