@@ -48,7 +48,7 @@ import {
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const STREAM_FIRST_TOKEN_TIMEOUT_MS = 0;
 const STREAM_TOTAL_TIMEOUT_MS = 180_000;
-const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 1800);
+const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 2200);
 const studyModes: StudyMode[] = ["quiz", "analysis", "quiz_analysis"];
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
@@ -421,6 +421,7 @@ function buildFastVisionMessages({
       content: `你是一个数学与理科学习题目解析助手。请直接识别图片中的真实题目并解答，用 ${outputLanguageText(language)} 输出 Markdown。
 
 必须按下面结构输出：
+
 ## 题目
 写出识别到的题干、公式、图形信息或选项。
 
@@ -430,11 +431,11 @@ function buildFastVisionMessages({
 ## 解析
 按步骤推导。数学公式必须使用 LaTeX：
 - 行内公式用 $...$
-- 独立公式用 $...$
+- 独立公式用 $$...$$
 - 幂次写成 x^2、a^2+b^2=c^2
-- 分式写成 \frac{...}{...}
-- 根号写成 \sqrt{...}
-- 不要把公式写成普通口语。
+- 分式写成 \\frac{...}{...}
+- 根号写成 \\sqrt{...}
+- 坐标、向量、函数、导数、积分、概率等都要用标准数学表达
 
 ## 知识点
 用 2-4 个要点总结。
@@ -443,12 +444,12 @@ function buildFastVisionMessages({
 指出最容易错的地方。
 
 要求：
+- 只输出一份原题解析，不要重复标题和解析。
 - 只解析图片里的题目，不要描述图片边框、浏览器、手机截图、黑边或无关 UI。
 - 不要说根据图片中可见信息。
 - 不要说图片内容复杂。
 - 不要说系统已尝试。
 - 如果确实看不清题目，只输出：题目不清晰，无法可靠识别。
-- 解析要准确，但不要重复生成多份原题解析。
 - 先给关键推导，不要写废话。`
     },
     {
@@ -540,7 +541,8 @@ async function createCachedResponse({
   };
 }) {
   const quizResult = mode === "analysis" ? null : cached.quizResult;
-  const status = mode === "analysis" || quizResult ? "completed" : "explanation_done";
+  const status: AnalysisJobStatus = mode === "analysis" || quizResult ? "completed" : "explanation_done";
+
   const row = await createJob(admin, {
     user_id: userId,
     status,
@@ -557,6 +559,7 @@ async function createCachedResponse({
     wrong_explanations: {},
     error_message: null
   });
+
   const markdown = markdownFromOriginalExplanation(cached.original);
 
   return {
@@ -592,7 +595,7 @@ export async function POST(request: Request) {
     }
 
     userIdForLog = user.id;
-    const admin = createSupabaseAdminClient();
+
     const formData = await request.formData();
     const mode = normalizeMode(formData.get("mode"));
     const language = normalizeLanguage(formData.get("language"));
@@ -614,83 +617,7 @@ export async function POST(request: Request) {
       return apiError("图片太大，请压缩后重试。");
     }
 
-    const allowance = await getGenerationAllowance(admin, user.id);
-
-    if (allowance.isBanned) {
-      return apiError("账户状态异常，请联系客服处理。微信：15155132939", 403);
-    }
-
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const imageHash = createHash(buffer);
-    const cached = await findCachedOriginal({
-      admin,
-      imageHash,
-      language
-    });
-
-    if (cached) {
-      const cachedResponse = await createCachedResponse({
-        admin,
-        userId: user.id,
-        mode,
-        language,
-        allowance,
-        imageHash,
-        cached
-      });
-
-      if (mode !== "analysis" && !cached.quizResult) {
-        void generateQuizForStreamJob({
-          admin,
-          jobId: cachedResponse.jobId,
-          userId: user.id,
-          mode,
-          language
-        });
-      }
-
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(encoder.encode(sseEncode("meta", cachedResponse.payload)));
-          controller.enqueue(encoder.encode(sseEncode("done", cachedResponse.payload)));
-          controller.close();
-        }
-      });
-
-      return new Response(stream, {
-        headers: {
-          "Content-Type": "text/event-stream; charset=utf-8",
-          "Cache-Control": "no-cache, no-transform",
-          Connection: "keep-alive"
-        }
-      });
-    }
-
-    if (!allowance.allowed) {
-      const reason =
-        allowance.monthlyRemaining === 0
-          ? "本月生成额度已用完，请下月再试或联系管理员处理。"
-          : allowance.dailyRemaining <= 0
-            ? "今日会员额度已用完，请明天再试或升级会员。"
-            : "剩余生成次数不足，请联系管理员充值或开通会员。";
-      return apiError(reason, 402);
-    }
-
-    const created = await createJob(admin, {
-      user_id: user.id,
-      status: "generating_explanation",
-      progress: JOB_PROGRESS.generating_explanation,
-      stage: "正在读取题目...",
-      language,
-      image_hash: imageHash,
-      quiz_answers: {},
-      wrong_explanations: {}
-    });
-
-    jobId = created.id as string;
-    const base64 = buffer.toString("base64");
-    const mimeType = file.type || "image/jpeg";
+    const admin = createSupabaseAdminClient();
     const encoder = new TextEncoder();
 
     const stream = new ReadableStream({
@@ -702,16 +629,124 @@ export async function POST(request: Request) {
         };
 
         send("meta", {
-          jobId,
-          status: "generating_explanation",
-          progress: JOB_PROGRESS.generating_explanation,
-          stage: "正在读取题目...",
+          jobId: null,
+          status: "queued",
+          progress: 5,
+          stage: "已收到图片，正在准备解析",
           language,
-          cached: false,
-          ...createGenerationAllowancePayload(allowance)
+          cached: false
         });
 
         try {
+          send("meta", {
+            jobId: null,
+            status: "queued",
+            progress: 10,
+            stage: "正在读取图片",
+            language,
+            cached: false
+          });
+
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const imageHash = createHash(buffer);
+          const base64 = buffer.toString("base64");
+          const mimeType = file.type || "image/jpeg";
+
+          send("meta", {
+            jobId: null,
+            status: "queued",
+            progress: 18,
+            stage: "正在检查会员与缓存",
+            language,
+            cached: false
+          });
+
+          const allowance = await getGenerationAllowance(admin, user.id);
+
+          if (allowance.isBanned) {
+            throw new AnalyzeStreamError("账户状态异常，请联系客服处理。微信：15155132939", 403);
+          }
+
+          const cached = await findCachedOriginal({
+            admin,
+            imageHash,
+            language
+          });
+
+          if (cached) {
+            const cachedResponse = await createCachedResponse({
+              admin,
+              userId: user.id,
+              mode,
+              language,
+              allowance,
+              imageHash,
+              cached
+            });
+
+            jobId = cachedResponse.jobId;
+
+            send("meta", cachedResponse.payload);
+            send("done", cachedResponse.payload);
+
+            if (mode !== "analysis" && !cached.quizResult) {
+              void generateQuizForStreamJob({
+                admin,
+                jobId: cachedResponse.jobId,
+                userId: user.id,
+                mode,
+                language
+              });
+            }
+
+            controller.close();
+            return;
+          }
+
+          if (!allowance.allowed) {
+            const reason =
+              allowance.monthlyRemaining === 0
+                ? "本月生成额度已用完，请下月再试或联系管理员处理。"
+                : allowance.dailyRemaining <= 0
+                  ? "今日会员额度已用完，请明天再试或升级会员。"
+                  : "剩余生成次数不足，请联系管理员充值或开通会员。";
+
+            throw new AnalyzeStreamError(reason, 402);
+          }
+
+          send("meta", {
+            jobId: null,
+            status: "queued",
+            progress: 28,
+            stage: "正在创建任务",
+            language,
+            cached: false,
+            ...createGenerationAllowancePayload(allowance)
+          });
+
+          const created = await createJob(admin, {
+            user_id: user.id,
+            status: "generating_explanation",
+            progress: JOB_PROGRESS.generating_explanation,
+            stage: "正在调用 Qwen VL",
+            language,
+            image_hash: imageHash,
+            quiz_answers: {},
+            wrong_explanations: {}
+          });
+
+          jobId = created.id as string;
+
+          send("meta", {
+            jobId,
+            status: "generating_explanation",
+            progress: 40,
+            stage: "正在调用 Qwen VL",
+            language,
+            cached: false,
+            ...createGenerationAllowancePayload(allowance)
+          });
+
           for await (const chunk of streamQwenChatCompletion(
             {
               model: QWEN_VL_MODEL,
@@ -725,14 +760,15 @@ export async function POST(request: Request) {
               max_tokens: VISION_STREAM_MAX_TOKENS
             },
             {
-              firstTokenTimeoutMs: 0,
+              firstTokenTimeoutMs: STREAM_FIRST_TOKEN_TIMEOUT_MS,
               totalTimeoutMs: STREAM_TOTAL_TIMEOUT_MS
             }
           )) {
             fullMarkdown += chunk.text;
+
             send("delta", {
               text: chunk.text,
-              progress: 55,
+              progress: 65,
               stage: "正在生成解析..."
             });
           }
@@ -751,12 +787,14 @@ export async function POST(request: Request) {
           const detectedText = originalExplanation.detectedText;
           const ocrHash = detectedText ? createTextHash(detectedText) : null;
           const nextStatus = statusForMode(mode);
+
           const row = await updateJobAndReturn(admin, jobId as string, nextStatus, {
             detected_text: detectedText,
             ...(ocrHash ? { ocr_hash: ocrHash } : {}),
             original_explanation: originalExplanation,
             error_message: null
           });
+
           const usageLogged = await writeUsageLog({
             admin,
             userId: user.id,
@@ -766,17 +804,20 @@ export async function POST(request: Request) {
             status: "success",
             request
           });
+
           const remainingCredits = usageLogged
             ? await deductGenerationCredit(admin, user.id).catch((error) => {
                 console.error("stream_deduct_generation_credit_failed", error);
                 return allowance.creditsRemaining;
               })
             : allowance.creditsRemaining;
+
           const refreshedAllowance = await getGenerationAllowance(admin, user.id).catch(() => ({
             ...allowance,
             creditsRemaining: remainingCredits,
             remainingCredits
           }));
+
           const [analysisRecordResult] = await Promise.allSettled([
             createLegacyAnalysisRecord({
               admin,
@@ -896,7 +937,8 @@ export async function POST(request: Request) {
       headers: {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive"
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no"
       }
     });
   } catch (error) {
