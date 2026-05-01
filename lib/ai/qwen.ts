@@ -6,7 +6,9 @@ export const QWEN_BASE_URL =
   "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
 export const DEEPSEEK_BASE_URL =
-  process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
+  process.env.DEEPSEEK_BASE_URL ||
+  process.env.DASHSCOPE_BASE_URL ||
+  QWEN_BASE_URL;
 
 export const QWEN_VL_MODEL = process.env.QWEN_VL_MODEL || "qwen3-vl-flash";
 
@@ -115,10 +117,16 @@ function resolveProvider(model: string) {
     };
   }
 
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  const useDashScopeForDeepSeek =
+    /dashscope|aliyuncs/i.test(DEEPSEEK_BASE_URL) ||
+    Boolean(process.env.DEEPSEEK_USE_DASHSCOPE);
+
+  const apiKey = useDashScopeForDeepSeek
+    ? process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY || process.env.DEEPSEEK_API_KEY
+    : process.env.DEEPSEEK_API_KEY || process.env.QWEN_API_KEY || process.env.DASHSCOPE_API_KEY;
 
   if (!apiKey) {
-    throw new AiConfigurationError("DeepSeek 文本模型未配置，请设置 DEEPSEEK_API_KEY。");
+    throw new AiConfigurationError("DeepSeek 文本模型未配置，请设置 DASHSCOPE_API_KEY、QWEN_API_KEY 或 DEEPSEEK_API_KEY。");
   }
 
   return {
