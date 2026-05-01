@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { AppLanguage } from "@/lib/language";
@@ -65,7 +65,7 @@ type GenerationTaskContextValue = {
   updateTask: (patch: Partial<GenerationTaskState>) => void;
 };
 
-const STORAGE_KEY = "qgyx:generation-tasks";
+const STORAGE_KEY = "qgyx:generation-tasks-v3";
 
 const initialTask: GenerationTaskState = {
   id: "",

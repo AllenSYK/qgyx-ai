@@ -1,4 +1,4 @@
-export const runtime = "nodejs";
+﻿export const runtime = "nodejs";
 export const preferredRegion = "sin1";
 export const maxDuration = 300;
 
@@ -46,9 +46,9 @@ import {
 } from "@/lib/ai/originalExplanationQuality";
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-const STREAM_FIRST_TOKEN_TIMEOUT_MS = 15_000;
+const STREAM_FIRST_TOKEN_TIMEOUT_MS = 0;
 const STREAM_TOTAL_TIMEOUT_MS = 180_000;
-const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 6000);
+const VISION_STREAM_MAX_TOKENS = Number(process.env.QWEN_VL_MAX_TOKENS || 1800);
 const studyModes: StudyMode[] = ["quiz", "analysis", "quiz_analysis"];
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
@@ -477,8 +477,7 @@ function toHttpError(error: unknown) {
   if (error instanceof AiTimeoutError) {
     return {
       message: error.message.includes("首 token")
-        ? "模型首 token 超时，请稍后重试。"
-        : "模型响应超时，请稍后重试。",
+        "模型响应超时，请稍后重试。",
       status: 503
     };
   }
@@ -710,7 +709,7 @@ export async function POST(request: Request) {
               max_tokens: VISION_STREAM_MAX_TOKENS
             },
             {
-              firstTokenTimeoutMs: STREAM_FIRST_TOKEN_TIMEOUT_MS,
+              firstTokenTimeoutMs: 0,
               totalTimeoutMs: STREAM_TOTAL_TIMEOUT_MS
             }
           )) {
