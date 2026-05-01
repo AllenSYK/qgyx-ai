@@ -9,10 +9,11 @@ import {
   JOB_PROGRESS,
   JOB_STAGE_TEXT,
   originalExplanationToAnalysisResult,
-  quizResultToLegacyQuiz,
+  quizResultToLegacyQuizForLanguage,
   updateJobStatus,
   type AnalysisJobStatus
 } from "@/lib/analysis-jobs";
+import { cleanAnalysisMarkdown } from "@/lib/analysisMarkdown";
 import { generateOriginalExplanation } from "@/lib/ai/generateOriginalExplanation";
 import { generateOriginalExplanationFromImage } from "@/lib/ai/generateOriginalExplanationFromImage";
 import { generateQuiz } from "@/lib/ai/generateQuiz";
@@ -40,6 +41,8 @@ import {
   getGenerationAllowance
 } from "@/lib/membership";
 import { normalizeLanguage, type AppLanguage } from "@/lib/language";
+import { normalizeLatexText } from "@/lib/latex";
+import { markdownFromOriginalExplanation } from "@/lib/ai/originalExplanationFromMarkdown";
 import type { Quiz, StudyMode } from "@/types/quiz";
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -179,8 +182,10 @@ async function writeUsageLog({
       ip_region: meta?.ipRegion ?? null,
       ip_city: meta?.ipCity ?? null
     });
+    return true;
   } catch (error) {
     console.error("AI usage log write failed:", error);
+    return false;
   }
 }
 
@@ -258,15 +263,17 @@ async function createLegacyQuizRecords({
   userId,
   mode,
   quizResult,
-  originalExplanation
+  originalExplanation,
+  language
 }: {
   admin: ReturnType<typeof createSupabaseAdminClient>;
   userId: string;
   mode: StudyMode;
   quizResult: QuizResult;
   originalExplanation: OriginalExplanation;
+  language: AppLanguage;
 }) {
-  const legacyQuiz = quizResultToLegacyQuiz(quizResult, originalExplanation);
+  const legacyQuiz = quizResultToLegacyQuizForLanguage(quizResult, originalExplanation, language);
 
   const { data: session, error: sessionError } = await admin
     .from("quiz_sessions")
@@ -386,7 +393,8 @@ async function generateQuizForJob({
         userId,
         mode,
         quizResult,
-        originalExplanation
+        originalExplanation,
+        language
       }),
       writeUsageLog({
         admin,
@@ -585,17 +593,35 @@ async function createCachedJobResponse({
     language,
     cached: true,
     imageUrl: imageUrl || cached.imageUrl || null,
+    analysisText: markdownFromOriginalExplanation(cached.original, language),
     ...createGenerationAllowancePayload(allowance),
     originalExplanation: cached.original,
     analysis: originalExplanationToAnalysisResult(cached.original),
     quizResult,
-    quiz: quizResult ? quizResultToLegacyQuiz(quizResult, cached.original) : null
+    quiz: quizResult ? quizResultToLegacyQuizForLanguage(quizResult, cached.original, language) : null
   });
 }
 
-function sanitizeOriginalExplanation(originalExplanation: OriginalExplanation) {
+function cleanOriginalText(value: string, language: AppLanguage) {
+  return normalizeLatexText(cleanAnalysisMarkdown(value, language));
+}
+
+function sanitizeOriginalExplanation(originalExplanation: OriginalExplanation, language: AppLanguage) {
   const normalized = normalizeOriginalExplanationShape(originalExplanation);
-  const fullText = JSON.stringify(normalized);
+  const cleaned: OriginalExplanation = {
+    ...normalized,
+    title: cleanOriginalText(normalized.title, language),
+    detectedText: cleanOriginalText(normalized.detectedText, language),
+    subject: cleanOriginalText(normalized.subject, language),
+    topic: cleanOriginalText(normalized.topic, language),
+    finalAnswer: cleanOriginalText(normalized.finalAnswer, language),
+    explanation: cleanOriginalText(normalized.explanation, language),
+    keySteps: normalized.keySteps.map((item) => cleanOriginalText(item, language)).filter(Boolean).slice(0, 4),
+    knowledgePoints: (normalized.knowledgePoints || []).map((item) => cleanOriginalText(item, language)).filter(Boolean).slice(0, 4),
+    commonMistake: cleanOriginalText(normalized.commonMistake, language),
+    similarIdeas: normalized.similarIdeas.map((item) => cleanOriginalText(item, language)).filter(Boolean).slice(0, 2)
+  };
+  const fullText = JSON.stringify(cleaned);
 
   const badPatterns = [
     "图片内容较复杂",
@@ -614,7 +640,7 @@ function sanitizeOriginalExplanation(originalExplanation: OriginalExplanation) {
     throw new ImageNotClearError();
   }
 
-  return assertUsableOriginalExplanation(normalized);
+  return assertUsableOriginalExplanation(cleaned);
 }
 
 async function generateImageOriginalWithFallback({
@@ -810,22 +836,14 @@ export async function POST(request: Request) {
 
     await applySoftLimitDelay(allowance.speedMode);
 
-    const imageUrl = await uploadToStorage({
-      admin,
-      userId: user.id,
-      file,
-      buffer,
-      imageHash,
-      sourceType
-    });
+    let imageUrl: string | null = null;
 
     const created = await createJob(admin, {
       user_id: user.id,
-      status: "uploading",
-      progress: JOB_PROGRESS.uploading,
-      stage: JOB_STAGE_TEXT.uploading,
+      status: "queued",
+      progress: JOB_PROGRESS.queued,
+      stage: JOB_STAGE_TEXT.queued,
       language,
-      image_url: imageUrl,
       image_hash: imageHash,
       quiz_answers: {},
       wrong_explanations: {}
@@ -943,7 +961,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const originalExplanation = sanitizeOriginalExplanation(originalExplanationRaw);
+    const originalExplanation = sanitizeOriginalExplanation(originalExplanationRaw, language);
     const effectiveDetectedText = detectedText || originalExplanation.detectedText;
     const effectiveOcrHash = effectiveDetectedText ? createTextHash(effectiveDetectedText) : ocrHash;
     const nextStatus: AnalysisJobStatus = mode === "analysis" ? "completed" : "explanation_done";
@@ -955,7 +973,7 @@ export async function POST(request: Request) {
       error_message: null
     });
 
-    await writeUsageLog({
+    const usageLogged = await writeUsageLog({
       admin,
       userId: user.id,
       jobId,
@@ -966,30 +984,50 @@ export async function POST(request: Request) {
     });
 
     const [remainingCredits, analysisRecordResult] = await Promise.allSettled([
-      deductGenerationCredit(admin, user.id),
+      usageLogged ? deductGenerationCredit(admin, user.id) : Promise.resolve(allowance.creditsRemaining),
       createLegacyAnalysisRecord({
         admin,
         userId: user.id,
         mode,
         sourceType,
-        imageUrl,
+        imageUrl: null,
         originalExplanation,
         request
-      }),
-      admin.from("uploaded_files").insert({
-        user_id: user.id,
-        session_id: null,
-        file_name: file.name,
-        file_type: file.type || (isPdf ? "application/pdf" : "image/*"),
-        file_size: file.size,
-        source_kind: sourceType,
-        status: "processed",
-        ip_address: getRequestMeta(request).ipAddress,
-        ip_country: getRequestMeta(request).ipCountry,
-        ip_region: getRequestMeta(request).ipRegion,
-        ip_city: getRequestMeta(request).ipCity
       })
     ]);
+
+    scheduleBackground(async () => {
+      const storedImageUrl = await uploadToStorage({
+        admin,
+        userId: user.id,
+        file,
+        buffer,
+        imageHash,
+        sourceType
+      });
+
+      await Promise.allSettled([
+        storedImageUrl
+          ? admin
+              .from("analysis_jobs")
+              .update({ image_url: storedImageUrl, updated_at: new Date().toISOString() })
+              .eq("id", jobId)
+          : Promise.resolve(),
+        admin.from("uploaded_files").insert({
+          user_id: user.id,
+          session_id: null,
+          file_name: file.name,
+          file_type: file.type || (isPdf ? "application/pdf" : "image/*"),
+          file_size: file.size,
+          source_kind: sourceType,
+          status: "processed",
+          ip_address: getRequestMeta(request).ipAddress,
+          ip_country: getRequestMeta(request).ipCountry,
+          ip_region: getRequestMeta(request).ipRegion,
+          ip_city: getRequestMeta(request).ipCity
+        })
+      ]);
+    });
 
     const refreshedAllowance = await getGenerationAllowance(admin, user.id).catch(() => ({
       ...allowance,
@@ -1016,7 +1054,8 @@ export async function POST(request: Request) {
       stage: mode === "analysis" ? row.stage : "原题解析已完成，Quiz 正在后台生成",
       language,
       cached: false,
-      imageUrl,
+      imageUrl: null,
+      analysisText: markdownFromOriginalExplanation(originalExplanation, language),
       analysisRecordId: analysisRecordResult.status === "fulfilled" ? analysisRecordResult.value : null,
       ...createGenerationAllowancePayload(refreshedAllowance),
       originalExplanation,

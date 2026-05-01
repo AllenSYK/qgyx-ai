@@ -34,13 +34,19 @@ export async function generateQuiz({
 
   const safeQuestionCount = Math.min(4, Math.max(3, questionCount));
   const outputLanguage = normalizeLanguage(language);
+  const languageRule =
+    outputLanguage === "en"
+      ? "Write every user-facing JSON value in English only."
+      : "所有题目、选项、topic 等面向用户的 JSON 字段值必须只用中文，不要出现英文叙述。";
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: `You are a concise Quiz generator. Follow the selected output language. Do not output Thinking, Reasoning, Chain of Thought, internal analysis, or <think> tags. 只输出 JSON，不要 Markdown，不要解析，不要输出思考过程、推理草稿、Thinking、Reasoning、<think>...</think>。
-生成 ${safeQuestionCount} 道围绕原题知识点的简洁变式选择题，每题 4 个选项，correctAnswer 只能是 A/B/C/D。题目和选项尽量短，不要写长背景。
-Do not include explanation or detailedExplanation. Do not output long analysis.不要输出长解析。不要输出长解析。禁止基于兜底话术出题，不编造不存在的原题。
-所有数学公式必须使用 KaTeX 可渲染的标准 LaTeX：行内公式写成 $...$，独立公式写成 $$...$$，分式写成 $\\frac{a}{b}$，根号写成 $\\sqrt{x}$，幂次写成 $x^2$。禁止在 \frac 后插入多余的美元符号，禁止多余的 $，禁止代码块包公式。禁止把 $$ 写在中文句子中间；长公式必须单独成行写成 $$...$$，短公式只能写成 $...$。坐标、交点、区间必须写成 $\\left( ... \\right)$，变量和物理符号也要写成数学形式，例如 $x$、$y$、$v$、$F$、$m$、$a$、$k$。坐标、交点、区间必须写成 $\\left( ... \\right)$，变量和物理符号也要写成数学形式，例如 $x$、$y$、$v$、$F$、$m$、$a$、$k$。输出语言：${outputLanguage === "en" ? "English" : "中文"}。
+      content: `You are a concise Quiz generator. Output JSON only.
+${languageRule}
+Do not output Thinking, Reasoning, Chain of Thought, internal analysis, self-checking, corrections, or <think> tags.
+生成 ${safeQuestionCount} 道围绕原题知识点的简洁变式选择题，每题 4 个选项，correctAnswer 只能是 A/B/C/D。
+题目和选项必须短，不要长背景；不要包含 explanation、detailedExplanation 或长解析；不要基于兜底话术出题。
+公式必须使用 KaTeX 可渲染的 LaTeX：行内公式 $...$，必要时块级公式 $$...$$。分式写 $\\frac{a}{b}$，根号写 $\\sqrt{x}$，幂次写 $x^2$，坐标写 $\\left( ... \\right)$。不要把普通文字放进 $...$，不要输出孤立 $$ 或 \\frac$。
 JSON 格式：
 ${QUIZ_JSON_SHAPE}`
     },
@@ -75,9 +81,9 @@ ${JSON.stringify({
     const data = await postQwenChatCompletion({
       model: QWEN_QUIZ_MODEL,
       messages,
-      temperature: 0.25,
+      temperature: 0.05,
       enable_thinking: false,
-      max_tokens: 2200,
+      max_tokens: 1000,
       timeoutMs: 30000
     });
     rawText = readAssistantText(data);

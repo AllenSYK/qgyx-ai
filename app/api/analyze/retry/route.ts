@@ -5,7 +5,7 @@ import { apiError, apiSuccess } from "@/lib/api-response";
 import {
   createJobStatusPayload,
   originalExplanationToAnalysisResult,
-  quizResultToLegacyQuiz,
+  quizResultToLegacyQuizForLanguage,
   updateJobStatus
 } from "@/lib/analysis-jobs";
 import { generateOriginalExplanation } from "@/lib/ai/generateOriginalExplanation";
@@ -138,7 +138,7 @@ export async function POST(request: Request) {
       ...createJobStatusPayload(updated),
       ...createGenerationAllowancePayload(refreshedAllowance),
       analysis: originalExplanationToAnalysisResult(nextOriginal),
-      quiz: quizResultToLegacyQuiz(nextQuiz, nextOriginal)
+      quiz: quizResultToLegacyQuizForLanguage(nextQuiz, nextOriginal, language)
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "重试任务失败。";

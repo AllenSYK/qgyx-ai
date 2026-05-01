@@ -150,6 +150,36 @@ export default function UploadCard({
   const taskUsesQuiz = task.mode === "quiz" || task.mode === "quiz_analysis";
   const quizPending = Boolean(task.analysis && taskUsesQuiz && !task.quiz && task.status === "running");
   const quizFailed = Boolean(task.analysis && taskUsesQuiz && !task.quiz && task.status === "error");
+  const resultLanguage = task.language || language;
+  const resultLabels = resultLanguage === "en"
+    ? {
+        live: "AI is analyzing",
+        complete: "Full Explanation",
+        generatingTitle: "Generating Explanation",
+        originalTitle: "Original Explanation",
+        retry: "Regenerate Explanation",
+        analysisChip: "Problem Explanation",
+        finishedTitle: "AI Finished The Explanation",
+        answer: "Answer",
+        explanation: "Explanation",
+        knowledge: "Key Points",
+        mistakes: "Common Mistakes",
+        similar: "Similar Ideas"
+      }
+    : {
+        live: "AI 正在实时解析",
+        complete: "完整解析",
+        generatingTitle: "解析正在生成",
+        originalTitle: "原题解析",
+        retry: "重新生成解析",
+        analysisChip: "题目解析",
+        finishedTitle: "AI 已完成原题分析",
+        answer: "正确答案",
+        explanation: "分步骤解析",
+        knowledge: "涉及知识点",
+        mistakes: "易错点",
+        similar: "类似题思路"
+      };
 
   const remainingCredits = allowance.remainingCredits;
   const dailyRemaining = allowance.dailyRemaining;
@@ -652,10 +682,10 @@ export default function UploadCard({
             <div>
               <div className="inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
                 <ScanSearch className="h-4 w-4" />
-                {task.status === "running" ? "AI 正在实时解析" : "完整解析"}
+                {task.status === "running" ? resultLabels.live : resultLabels.complete}
               </div>
               <h2 className="mt-3 text-2xl font-semibold text-slate-950">
-                {task.status === "running" ? "解析正在生成" : "原题解析"}
+                {task.status === "running" ? resultLabels.generatingTitle : resultLabels.originalTitle}
               </h2>
             </div>
             {task.status === "error" ? (
@@ -665,78 +695,79 @@ export default function UploadCard({
                 className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white transition duration-200 ease-out hover:bg-blue-700 active:scale-[0.97] active:opacity-75"
               >
                 <RotateCcw className="h-4 w-4" />
-                重新生成解析
+                {resultLabels.retry}
               </button>
             ) : null}
           </div>
 
-          <div className="max-h-[720px] overflow-y-auto rounded-3xl border border-blue-100 bg-white p-4 shadow-inner">
-            <MarkdownRenderer as="div" text={task.analysisText} className="text-[15px] leading-7 text-slate-950" />
+          <div className="max-h-[720px] overflow-y-auto rounded-3xl border border-blue-100 bg-white p-4 shadow-inner sm:p-5">
+            <MarkdownRenderer as="div" text={task.analysisText} language={resultLanguage} className="text-[15px] leading-7 text-slate-950" />
           </div>
         </section>
       ) : null}
 
       {task.analysis && !task.analysisText ? (
         <section className="rounded-[28px] border border-slate-200 bg-white/95 p-5 shadow-[0_18px_55px_rgba(15,23,42,0.08)] backdrop-blur sm:p-7">
-          <div className="mb-5">
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
-              <ScanSearch className="h-4 w-4" />
-              题目解析
+            <div className="mb-5">
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
+                <ScanSearch className="h-4 w-4" />
+              {resultLabels.analysisChip}
             </div>
-            <h2 className="text-2xl font-semibold text-slate-950">AI 已完成原题分析</h2>
+            <h2 className="text-2xl font-semibold text-slate-950">{resultLabels.finishedTitle}</h2>
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
             <div className="space-y-4">
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                <div className="mb-2 text-sm font-semibold text-slate-500">题目识别结果</div>
-                <MarkdownRenderer as="div" text={task.analysis.recognizedText} className="text-[15px] leading-7 text-slate-950" />
-              </div>
-
               <div className="rounded-3xl border border-blue-100 bg-blue-50 p-4">
-                <div className="mb-2 text-sm font-semibold text-blue-700">正确答案</div>
-                <MarkdownRenderer as="div" text={task.analysis.answer} className="text-sm leading-7 text-blue-950" />
+                <div className="mb-2 text-sm font-semibold text-blue-700">{resultLabels.answer}</div>
+                <MarkdownRenderer as="div" text={task.analysis.answer} language={resultLanguage} className="text-sm leading-7 text-blue-950" />
               </div>
 
               <div className="rounded-3xl border border-slate-200 bg-white p-4">
-                <div className="mb-2 text-sm font-semibold text-slate-500">分步骤解析</div>
-                <MarkdownRenderer as="div" text={task.analysis.explanation} className="text-[15px] leading-7 text-slate-950" />
+                <div className="mb-2 text-sm font-semibold text-blue-700">{resultLabels.explanation}</div>
+                <MarkdownRenderer as="div" text={task.analysis.explanation} language={resultLanguage} className="text-[15px] leading-7 text-slate-950" />
               </div>
             </div>
 
             <div className="space-y-4">
+              {task.analysis.knowledgePoints.length > 0 ? (
               <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4">
-                <div className="mb-3 text-sm font-semibold text-emerald-800">涉及知识点</div>
+                <div className="mb-3 text-sm font-semibold text-emerald-800">{resultLabels.knowledge}</div>
                 <div className="flex flex-wrap gap-2">
                   {task.analysis.knowledgePoints.map((point) => (
                     <span key={point} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-800">
-                      <MarkdownRenderer as="span" text={point} />
+                      <MarkdownRenderer as="span" text={point} language={resultLanguage} />
                     </span>
                   ))}
                 </div>
               </div>
+              ) : null}
 
+              {task.analysis.commonMistakes.length > 0 ? (
               <div className="rounded-3xl border border-rose-100 bg-rose-50 p-4">
-                <div className="mb-3 text-sm font-semibold text-rose-800">易错点</div>
+                <div className="mb-3 text-sm font-semibold text-rose-800">{resultLabels.mistakes}</div>
                 <ul className="space-y-2 text-sm leading-6 text-rose-900/80">
                   {task.analysis.commonMistakes.map((mistake) => (
                     <li key={mistake} className="rounded-2xl bg-white/70 px-3 py-2">
-                      <MarkdownRenderer as="span" text={mistake} />
+                      <MarkdownRenderer as="span" text={mistake} language={resultLanguage} />
                     </li>
                   ))}
                 </ul>
               </div>
+              ) : null}
 
+              {task.analysis.similarIdeas.length > 0 ? (
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                <div className="mb-3 text-sm font-semibold text-slate-700">类似题思路</div>
+                <div className="mb-3 text-sm font-semibold text-slate-700">{resultLabels.similar}</div>
                 <ul className="space-y-2 text-sm leading-6 text-slate-600">
                   {task.analysis.similarIdeas.map((idea) => (
                     <li key={idea} className="rounded-2xl bg-white px-3 py-2">
-                      <MarkdownRenderer as="span" text={idea} />
+                      <MarkdownRenderer as="span" text={idea} language={resultLanguage} />
                     </li>
                   ))}
                 </ul>
               </div>
+              ) : null}
             </div>
           </div>
         </section>

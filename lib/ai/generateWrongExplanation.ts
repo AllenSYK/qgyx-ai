@@ -23,6 +23,26 @@ export async function generateWrongExplanation({
   language?: AppLanguage;
 }): Promise<WrongExplanation> {
   const outputLanguage = normalizeLanguage(language);
+  const fallback: WrongExplanation =
+    outputLanguage === "en"
+      ? {
+          questionId: question.id,
+          userAnswer,
+          correctAnswer: question.correctAnswer,
+          whyWrong: "The selected option does not match the key condition or calculation in this question.",
+          explanation: "Re-read the given condition, write the matching formula, and compare each option with the computed result.",
+          correctMethod: "Use the condition from the question, calculate step by step, and keep the final unit or sign consistent.",
+          similarTip: "For similar questions, identify the target quantity first, then check signs, units, and option wording."
+        }
+      : {
+          questionId: question.id,
+          userAnswer,
+          correctAnswer: question.correctAnswer,
+          whyWrong: "所选选项与本题关键条件或计算结果不一致。",
+          explanation: "先回到题干标出已知条件，再列出对应公式，并逐项对照选项。",
+          correctMethod: "按题干条件列式，逐步计算或推理，最后检查符号、单位或范围。",
+          similarTip: "遇到同类题时，先判断要求的量，再检查符号、单位和选项差异。"
+        };
   const messages: ChatMessage[] = [
     {
       role: "system",
@@ -42,8 +62,10 @@ export async function generateWrongExplanation({
 7. 必须给正确思路
 8. 不要生成新题目
 9. 不要解释答对的题目
-10. ${languageInstruction(outputLanguage)}
-11. ${mathOutputInstruction}
+10. 不要输出 Thinking、Reasoning、Chain of Thought、内部分析、自我纠错、<think> 标签
+11. ${languageInstruction(outputLanguage)}
+12. ${mathOutputInstruction}
+13. 内容要短，每个字段 1-2 句
 
 输出 JSON 格式必须为：
 ${WRONG_EXPLANATION_JSON_SHAPE}`
@@ -63,25 +85,15 @@ ${JSON.stringify(originalExplanation, null, 2)}
     }
   ];
 
-  const fallback: WrongExplanation = {
-    questionId: question.id,
-    userAnswer,
-    correctAnswer: question.correctAnswer,
-    whyWrong: "已生成基础解析，请核对题干条件后继续：本题可能是关键条件、公式或选项判断出现偏差。",
-    explanation: "请先回到题干，标出已知条件，再对照正确答案使用对应方法重新推导。",
-    correctMethod: "按题干条件列式，逐步计算或推理，并用正确答案反查每一步。",
-    similarTip: "遇到同类题时，先判断知识点，再检查单位、符号和选项差异。"
-  };
-
   let rawText = "";
 
   try {
     const data = await postQwenChatCompletion({
       model: QWEN_TEXT_MODEL,
       messages,
-      temperature: 0.2,
+      temperature: 0.05,
       enable_thinking: false,
-      max_tokens: 1200,
+      max_tokens: 800,
       timeoutMs: 20000
     });
     rawText = readAssistantText(data);

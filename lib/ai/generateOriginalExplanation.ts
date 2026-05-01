@@ -44,8 +44,11 @@ export async function generateOriginalExplanation({
     {
       role: "system",
       content: `你是题目解析助手。只根据输入的真实题干生成原题解析，只输出 JSON。
-要求：不输出 Markdown；不生成 Quiz；不编造题目；复杂题可以完整分步骤解析，不要把 explanation 压缩成短答案；keySteps<=4；knowledgePoints<=4；similarIdeas<=3；公式用 $...$ LaTeX。
+要求：不输出 Markdown；不生成 Quiz；不编造题目；不要长篇推导；explanation 只保留关键步骤；keySteps<=4；knowledgePoints 2-4 条；similarIdeas 1-2 条。
+禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、内部分析、自我检查、自我纠错、<think> 标签。
 禁止输出兜底话术：图片内容较复杂、根据图片中可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别。
+不要把知识点写成“题目解析”，不要把易错点写成泛泛的“注意审题条件和关键计算步骤”。
+公式必须使用 KaTeX 可渲染 LaTeX：行内公式 $...$，分式 $\\frac{a}{b}$，根号 $\\sqrt{x}$，幂次 $x^2$；不要把普通文字放进 $...$。
 如果输入不足以确定具体题目，所有字段输出 ${UNRECOGNIZABLE_QUESTION_MARKER}。
 输出语言：${outputLanguage === "en" ? "English" : "中文"}。
 JSON 格式：
@@ -90,9 +93,9 @@ ${userId || "anonymous"}`
     const data = await postQwenChatCompletion({
       model: QWEN_TEXT_MODEL,
       messages,
-      temperature: 0.18,
+      temperature: 0.05,
       enable_thinking: false,
-      max_tokens: 6000,
+      max_tokens: 1600,
       timeoutMs: 90000
     });
     rawText = readAssistantText(data);

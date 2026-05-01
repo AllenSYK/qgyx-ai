@@ -84,11 +84,36 @@ textarea {
 
 .math-text .katex {
   font-size: 1.03em;
+  max-width: 100%;
 }
 
 .math-text .katex-display {
-  margin: 0.25rem 0;
+  max-width: 100%;
+  margin: 0.35rem 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 0.25rem 0;
+  padding: 0.35rem 0.15rem;
+  color: #0f172a;
+}
+
+.math-text .katex-display > .katex {
+  display: inline-block;
+  min-width: max-content;
+}
+
+.math-text :not(.katex-display) > .katex {
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: -0.18em;
+}
+
+.markdown-renderer {
+  color: #0f172a;
+}
+
+.markdown-renderer p,
+.markdown-renderer li {
+  color: #0f172a;
 }

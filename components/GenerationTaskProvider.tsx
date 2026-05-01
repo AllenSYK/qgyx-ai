@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import type { AppLanguage } from "@/lib/language";
+import { normalizeLanguage, type AppLanguage } from "@/lib/language";
 import { compressImageForUpload } from "@/lib/client/compressImage";
 import type { AnalysisResult, Quiz, StudyMode, WrongQuestion } from "@/types/quiz";
 
@@ -169,6 +169,37 @@ function statusText(status: string, fallback?: string | null) {
   return map[status] || "处理中";
 }
 
+function waitForPaint() {
+  return new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
+function buildAnalysisMarkdown(analysis: AnalysisResult, language: AppLanguage) {
+  const isEn = language === "en";
+  const sections = [
+    `## ${isEn ? "Answer" : "答案"}`,
+    analysis.answer,
+    "",
+    `## ${isEn ? "Explanation" : "解析"}`,
+    analysis.explanation,
+    "",
+    analysis.knowledgePoints?.length ? `## ${isEn ? "Key Points" : "知识点"}` : "",
+    ...(analysis.knowledgePoints || []).slice(0, 4).map((item) => `- ${item}`),
+    "",
+    analysis.commonMistakes?.length ? `## ${isEn ? "Common Mistakes" : "易错点"}` : "",
+    ...(analysis.commonMistakes || []).slice(0, 2).map((item) => `- ${item}`),
+    "",
+    analysis.similarIdeas?.length ? `## ${isEn ? "Similar Ideas" : "类似题思路"}` : "",
+    ...(analysis.similarIdeas || []).slice(0, 2).map((item) => `- ${item}`)
+  ];
+
+  return sections
+    .filter((line, index, items) => line || (items[index - 1] && items[index + 1]))
+    .join("\n")
+    .trim();
+}
+
 function readEnvelope(input: unknown) {
   if (!input || typeof input !== "object") {
     return { success: false, data: null, error: "服务返回异常" };
@@ -193,6 +224,7 @@ function applyServerPayload(task: GenerationTaskState, payload: Record<string, u
   const analysis = (payload.analysis as AnalysisResult | null) || task.analysis;
   const quiz = (payload.quiz as Quiz | null) || task.quiz;
   const quizFailedAfterAnalysis = jobStatus === "failed" && Boolean(analysis) && !quiz;
+  const language = normalizeLanguage(payload.language || task.language);
   const payloadAnalysisText =
     typeof payload.analysisText === "string"
       ? payload.analysisText
@@ -203,7 +235,7 @@ function applyServerPayload(task: GenerationTaskState, payload: Record<string, u
   return {
     ...task,
     jobId: String(payload.jobId || task.jobId || ""),
-    language: (payload.language === "en" ? "en" : task.language) as AppLanguage,
+    language,
     jobStatus,
     status: statusToLocalStatus(jobStatus),
     progress,
@@ -217,15 +249,7 @@ function applyServerPayload(task: GenerationTaskState, payload: Record<string, u
     quiz,
     quizResult: payload.quizResult ?? task.quizResult,
     wrongExplanations: (payload.wrongExplanations as Record<string, unknown> | undefined) || task.wrongExplanations,
-    analysisText: payloadAnalysisText || (analysis
-      ? [
-          `## 答案\n${analysis.answer}`,
-          `## 解析\n${analysis.explanation}`,
-          analysis.knowledgePoints?.length ? `## 涉及知识点\n${analysis.knowledgePoints.slice(0, 4).map((item) => `- ${item}`).join("\n")}` : "",
-          analysis.commonMistakes ? `## 易错点\n${analysis.commonMistakes}` : "",
-          analysis.similarIdeas?.length ? `## 类似题目思路\n${analysis.similarIdeas.slice(0, 2).map((item) => `- ${item}`).join("\n")}` : ""
-        ].filter(Boolean).join("\n\n")
-      : task.analysisText),
+    analysisText: payloadAnalysisText || (analysis ? buildAnalysisMarkdown(analysis, language) : task.analysisText),
     remainingCredits:
       typeof payload.remainingCredits === "number" ? payload.remainingCredits : task.remainingCredits,
     dailyUsed:
@@ -432,7 +456,8 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
 
   const startGeneration = useCallback(
     async ({ file, originalFile, mode, language }: StartGenerationInput) => {
-      lastInputRef.current = { file, originalFile, mode, language };
+      const outputLanguage = normalizeLanguage(language);
+      lastInputRef.current = { file, originalFile, mode, language: outputLanguage };
       const displayFile = originalFile || file;
       const kind = getFileKind(displayFile);
       const taskId = `local-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -446,9 +471,9 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
         ...initialTask,
         id: taskId,
         status: "running",
-        jobStatus: "uploading",
+        jobStatus: "queued",
         mode,
-        language,
+        language: outputLanguage,
         file: {
           name: displayFile.name,
           type: displayFile.type,
@@ -456,13 +481,14 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
           kind
         },
         previewUrl,
-        progress: 10,
-        step: "正在上传图片",
+        progress: 6,
+        step: "正在准备上传",
         createdAt: new Date().toISOString()
       };
 
       setTasks((current) => [nextTask, ...current].slice(0, 12));
       setActiveTaskId(taskId);
+      await waitForPaint();
 
       if (kind === "unsupported") {
         updateTaskById(taskId, {
@@ -518,7 +544,7 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
       const formData = new FormData();
       formData.append("file", uploadFile);
       formData.append("mode", mode);
-      formData.append("language", language);
+      formData.append("language", outputLanguage);
 
       try {
         updateTaskById(taskId, {

@@ -86,9 +86,11 @@ export async function GET(request: Request) {
       return apiError("任务不存在或无权访问。", 404);
     }
 
+    const language = normalizeLanguage(data.language);
+
     if (data.status === "explanation_done" && data.original_explanation && !data.quiz_result) {
       await updateJobStatus(admin, jobId, "generating_quiz", {
-        stage: "Quiz 正在后台生成"
+        stage: language === "en" ? "Quiz is being generated" : "Quiz 正在后台生成"
       });
       const allowance = await getGenerationAllowance(admin, user.id);
       after(() => {
@@ -101,7 +103,7 @@ export async function GET(request: Request) {
             ...data,
             status: "generating_quiz",
             progress: 85,
-            stage: "Quiz 正在后台生成"
+            stage: language === "en" ? "Quiz is being generated" : "Quiz 正在后台生成"
           }),
           ...createGenerationAllowancePayload(allowance)
         }

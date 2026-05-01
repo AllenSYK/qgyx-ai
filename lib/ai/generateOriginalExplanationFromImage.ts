@@ -115,8 +115,8 @@ function buildMessages({
   const outputLanguage = outputLanguageText(language);
 
   const system = retry
-    ? `你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。不要输出 Markdown。不要输出任何兜底废话。公式用 LaTeX。keySteps<=4，knowledgePoints<=4，similarIdeas<=3。输出语言：${outputLanguage}。`
-    : `你是拍题解析助手。请直接识别并解析图片中的真实题目，只输出 JSON。看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别”等兜底话术。公式用 LaTeX。keySteps<=4，knowledgePoints<=4，similarIdeas<=3。输出语言：${outputLanguage}。`;
+    ? `你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。不要输出 Markdown、思考过程、自我纠错或兜底废话。公式用 KaTeX LaTeX。keySteps<=4，knowledgePoints<=4，similarIdeas<=2。输出语言：${outputLanguage}。`
+    : `你是拍题解析助手。请直接识别并解析图片中的真实题目，只输出 JSON。看不清具体题目时只输出 {"error":"${IMAGE_NOT_CLEAR}"}。禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、自我检查、自我纠错、<think> 标签。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别”等兜底话术。解析要短，只保留关键步骤；公式用 KaTeX LaTeX。keySteps<=4，knowledgePoints<=4，similarIdeas<=2。输出语言：${outputLanguage}。`;
 
   return [
     {
@@ -128,7 +128,7 @@ function buildMessages({
       content: [
         {
           type: "text",
-          text: `请识别并解析图片里的题目。只关注题干、公式、图形、表格、选项和答案推导。图像摘要：${imageSummary || "无"}`
+          text: `请识别并解析图片里的题目。只关注题干、公式、图形、表格、选项和答案推导；不要描述截图界面或 OCR 过程。图像摘要：${imageSummary || "无"}`
         },
         {
           type: "image_url",
@@ -148,7 +148,7 @@ async function requestVisionExplanation(messages: ChatMessage[]) {
       messages,
       temperature: 0.05,
       enable_thinking: false,
-      max_tokens: 1800
+      max_tokens: 1200
     },
     {
       // 关键：不要像之前一样 15 秒首 token 超时就杀掉。

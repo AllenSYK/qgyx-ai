@@ -3,10 +3,11 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   OriginalExplanation,
-  QuizQuestion as CommercialQuizQuestion,
   QuizResult,
   WrongExplanation
 } from "@/lib/ai/schema";
+import { markdownFromOriginalExplanation } from "@/lib/ai/originalExplanationFromMarkdown";
+import { normalizeLanguage, type AppLanguage } from "@/lib/language";
 import type { AnalysisResult, Quiz, QuizQuestion } from "@/types/quiz";
 
 export type AnalysisJobStatus =
@@ -55,7 +56,7 @@ export function answerIndexToLetter(index: number): "A" | "B" | "C" | "D" {
 export function originalExplanationToAnalysisResult(explanation: OriginalExplanation): AnalysisResult {
   const similarIdeas = Array.isArray(explanation.similarIdeas) && explanation.similarIdeas.length > 0
     ? explanation.similarIdeas
-    : explanation.keySteps;
+    : [];
   const knowledgePoints =
     Array.isArray(explanation.knowledgePoints) && explanation.knowledgePoints.length > 0
       ? explanation.knowledgePoints
@@ -75,6 +76,15 @@ export function originalExplanationToAnalysisResult(explanation: OriginalExplana
 }
 
 export function quizResultToLegacyQuiz(quizResult: QuizResult, original?: OriginalExplanation | null): Quiz {
+  return quizResultToLegacyQuizForLanguage(quizResult, original, "zh");
+}
+
+export function quizResultToLegacyQuizForLanguage(
+  quizResult: QuizResult,
+  original?: OriginalExplanation | null,
+  language: AppLanguage = "zh"
+): Quiz {
+  const outputLanguage = normalizeLanguage(language);
   const questions: QuizQuestion[] = quizResult.questions.map((question) => ({
     id: question.id,
     question: question.question,
@@ -89,8 +99,17 @@ export function quizResultToLegacyQuiz(quizResult: QuizResult, original?: Origin
   }));
 
   return {
-    title: original?.topic ? `${original.topic} 变式训练` : "AI 变式训练",
-    summary: "围绕原题知识点生成的练习题。解析仅在答错后按需生成。",
+    title: original?.topic
+      ? outputLanguage === "en"
+        ? `${original.topic} Practice`
+        : `${original.topic} 变式训练`
+      : outputLanguage === "en"
+        ? "AI Practice"
+        : "AI 变式训练",
+    summary:
+      outputLanguage === "en"
+        ? "Short practice questions based on the original problem. Explanations appear only for wrong answers."
+        : "围绕原题知识点生成的练习题。解析仅在答错后按需生成。",
     subject: original?.subject,
     questionType: original?.topic,
     sourceType: "image",
@@ -117,6 +136,7 @@ export function createJobStatusPayload(row: {
   error_message?: string | null;
 }) {
   const status = (row.status || "queued") as AnalysisJobStatus;
+  const language = normalizeLanguage(row.language);
 
   return {
     jobId: row.id,
@@ -124,11 +144,12 @@ export function createJobStatusPayload(row: {
     progress: row.progress ?? JOB_PROGRESS[status] ?? 0,
     stage: row.stage || JOB_STAGE_TEXT[status] || "",
     imageUrl: row.image_url || null,
-    language: row.language === "en" ? "en" : "zh",
+    language,
     originalExplanation: row.original_explanation || null,
     analysis: row.original_explanation ? originalExplanationToAnalysisResult(row.original_explanation) : null,
     quizResult: row.quiz_result || null,
-    quiz: row.quiz_result ? quizResultToLegacyQuiz(row.quiz_result, row.original_explanation || null) : null,
+    quiz: row.quiz_result ? quizResultToLegacyQuizForLanguage(row.quiz_result, row.original_explanation || null, language) : null,
+    analysisText: row.original_explanation ? markdownFromOriginalExplanation(row.original_explanation, language) : "",
     wrongExplanations: row.wrong_explanations || {},
     quizAnswers: row.quiz_answers || {},
     pdfUrl: row.pdf_url || null,

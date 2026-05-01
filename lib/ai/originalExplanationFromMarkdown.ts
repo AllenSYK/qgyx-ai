@@ -1,14 +1,25 @@
-﻿import "server-only";
+import "server-only";
 
+import { cleanAnalysisMarkdown, getAnalysisSectionKeyFromHeading } from "@/lib/analysisMarkdown";
 import type { OriginalExplanation } from "@/lib/ai/schema";
 import { normalizeLanguage, type AppLanguage } from "@/lib/language";
 
 const NOT_CLEAR_PATTERN = /题目不清晰|无法可靠识别|看不清题目|无法识别题目|未能识别出明确题目|IMAGE_NOT_CLEAR/i;
 
+type ParsedSections = {
+  preamble: string[];
+  answer: string[];
+  explanation: string[];
+  knowledge: string[];
+  mistakes: string[];
+  similar: string[];
+};
+
 function normalizeLines(text: string) {
   return text
     .replace(/\r\n/g, "\n")
     .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
@@ -20,32 +31,52 @@ function stripMarkdown(text: string) {
     .trim();
 }
 
-function sectionAfter(markdown: string, labels: string[]) {
-  const escapedLabels = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  const labelPattern = escapedLabels.join("|");
-  const regex = new RegExp(
-    `(?:^|\\n)\\s*(?:#{1,6}\\s*)?(?:\\d+[.)、]\\s*)?(?:${labelPattern})\\s*[:：]?\\s*\\n?`,
-    "i"
-  );
-  const match = regex.exec(markdown);
-
-  if (!match) {
-    return "";
-  }
-
-  const start = (match.index || 0) + match[0].length;
-  const rest = markdown.slice(start);
-  const next = rest.search(/\n\s*(?:#{1,6}\s*)?(?:\d+[.)、]\s*)?(?:识别到的题目|题目|最终答案|答案|分步骤解析|解析|涉及知识点|知识点|易错点|常见错误|Question|Final Answer|Answer|Solution|Steps|Knowledge|Common Mistakes)\s*[:：]?/i);
-  return stripMarkdown(next >= 0 ? rest.slice(0, next) : rest);
+function compact(value: string, fallback: string, maxLength: number) {
+  const text = normalizeLines(value || "").trim();
+  const next = text || fallback;
+  return next.length > maxLength ? next.slice(0, maxLength) : next;
 }
 
-function splitList(text: string, fallback: string[]) {
-  const items = normalizeLines(text)
-    .split(/\n+/)
-    .map((line) => stripMarkdown(line).replace(/^[:：]/, "").trim())
-    .filter(Boolean);
+function splitSections(markdown: string): ParsedSections {
+  const sections: ParsedSections = {
+    preamble: [],
+    answer: [],
+    explanation: [],
+    knowledge: [],
+    mistakes: [],
+    similar: []
+  };
+  let current: keyof ParsedSections = "preamble";
 
-  return (items.length > 0 ? items : fallback).slice(0, 4);
+  for (const line of normalizeLines(markdown).split("\n")) {
+    const key = getAnalysisSectionKeyFromHeading(line);
+
+    if (key === "question") {
+      current = "preamble";
+      continue;
+    }
+
+    if (key) {
+      current = key;
+      continue;
+    }
+
+    sections[current].push(line);
+  }
+
+  return sections;
+}
+
+function joinSection(lines: string[]) {
+  return normalizeLines(lines.join("\n"));
+}
+
+function splitList(lines: string[], maxItems: number) {
+  return lines
+    .flatMap((line) => line.split(/\n+/))
+    .map((line) => stripMarkdown(line).replace(/^[:：]/, "").trim())
+    .filter(Boolean)
+    .slice(0, maxItems);
 }
 
 function guessSubject(text: string, language: AppLanguage) {
@@ -64,91 +95,118 @@ function guessSubject(text: string, language: AppLanguage) {
   return language === "en" ? "General" : "综合";
 }
 
-function guessTopic(text: string, subject: string, language: AppLanguage) {
-  const knowledge = sectionAfter(text, ["涉及知识点", "知识点", "Knowledge Points", "Knowledge"]);
-
-  if (knowledge) {
-    return splitList(knowledge, [subject])[0] || subject;
-  }
-
-  return language === "en" ? "Question analysis" : "题目解析";
+function inferTopic(knowledgePoints: string[], subject: string, language: AppLanguage) {
+  const firstPoint = knowledgePoints[0]?.trim();
+  if (firstPoint) return compact(stripMarkdown(firstPoint), subject, 80);
+  if (subject !== (language === "en" ? "General" : "综合")) return subject;
+  return language === "en" ? "Core method" : "核心方法";
 }
 
-function compact(value: string, fallback: string, maxLength: number) {
-  const text = stripMarkdown(value || "").trim();
-  const next = text || fallback;
-  return next.length > maxLength ? next.slice(0, maxLength) : next;
+function deriveKeySteps(explanation: string, language: AppLanguage) {
+  const steps = normalizeLines(explanation)
+    .split("\n")
+    .map((line) => stripMarkdown(line))
+    .filter((line) => line && !/^\([a-z]\)$/i.test(line))
+    .slice(0, 4);
+
+  if (steps.length > 0) return steps;
+
+  return [
+    language === "en" ? "Use the conditions in the problem." : "代入题目中的关键条件。",
+    language === "en" ? "Apply the matching formula or theorem." : "使用对应公式或定理。",
+    language === "en" ? "Write the final result clearly." : "整理得到最终结果。"
+  ];
+}
+
+function languageLabels(language: AppLanguage) {
+  if (language === "en") {
+    return {
+      answer: "Answer",
+      explanation: "Explanation",
+      knowledge: "Key Points",
+      mistakes: "Common Mistakes",
+      similar: "Similar Ideas"
+    };
+  }
+
+  return {
+    answer: "答案",
+    explanation: "解析",
+    knowledge: "知识点",
+    mistakes: "易错点",
+    similar: "类似题思路"
+  };
 }
 
 export function isImageNotClearMarkdown(markdown: string) {
   return NOT_CLEAR_PATTERN.test(markdown);
 }
 
-export function markdownFromOriginalExplanation(original: OriginalExplanation) {
-  const knowledgePoints = Array.isArray(original.knowledgePoints) && original.knowledgePoints.length > 0
-    ? original.knowledgePoints
-    : [original.topic].filter(Boolean);
+export function markdownFromOriginalExplanation(original: OriginalExplanation, language: AppLanguage = "zh") {
+  const outputLanguage = normalizeLanguage(language);
+  const labels = languageLabels(outputLanguage);
+  const knowledgePoints = Array.isArray(original.knowledgePoints) ? original.knowledgePoints.filter(Boolean) : [];
+  const similarIdeas = Array.isArray(original.similarIdeas) ? original.similarIdeas.filter(Boolean) : [];
+  const commonMistake = String(original.commonMistake || "").trim();
 
-  return [
-    "## Answer",
-    original.finalAnswer,
-    "",
-    "## Explanation",
-    original.explanation,
-    "",
-    "## Key Points",
-    ...knowledgePoints.slice(0, 4).map((point) => `- ${point}`),
-    "",
-    "## Common Mistakes",
-    original.commonMistake,
-    "",
-    "## Similar Ideas",
-    ...original.similarIdeas.slice(0, 2).map((idea) => `- ${idea}`)
-  ].join("\n").trim();
+  return cleanAnalysisMarkdown(
+    [
+      `## ${labels.answer}`,
+      original.finalAnswer,
+      "",
+      `## ${labels.explanation}`,
+      original.explanation,
+      "",
+      knowledgePoints.length ? `## ${labels.knowledge}` : "",
+      ...knowledgePoints.slice(0, 4).map((point) => `- ${point}`),
+      "",
+      commonMistake ? `## ${labels.mistakes}` : "",
+      commonMistake ? `- ${commonMistake}` : "",
+      "",
+      similarIdeas.length ? `## ${labels.similar}` : "",
+      ...similarIdeas.slice(0, 2).map((idea) => `- ${idea}`)
+    ]
+      .filter((line, index, items) => line || (items[index - 1] && items[index + 1]))
+      .join("\n"),
+    outputLanguage
+  );
 }
 
 export function createOriginalExplanationFromMarkdown(markdown: string, language: AppLanguage = "zh"): OriginalExplanation {
   const outputLanguage = normalizeLanguage(language);
-  const normalized = normalizeLines(markdown);
+  const normalized = cleanAnalysisMarkdown(markdown, outputLanguage);
+  const sections = splitSections(normalized);
+  const answerSection = joinSection(sections.answer);
+  const explanationSection = joinSection(sections.explanation);
+  const knowledgePoints = splitList(sections.knowledge, 4);
+  const similarIdeas = splitList(sections.similar, 2);
+  const mistakeItems = splitList(sections.mistakes, 2);
   const subject = guessSubject(normalized, outputLanguage);
-  const topic = guessTopic(normalized, subject, outputLanguage);
-  const detectedText = compact(
-    sectionAfter(normalized, ["识别到的题目", "题目", "Question"]),
-    normalized.slice(0, 1200),
-    4000
-  );
-  const finalAnswer = compact(
-    sectionAfter(normalized, ["最终答案", "答案", "Final Answer", "Answer"]),
-    outputLanguage === "en" ? "See the solution above." : "见解析。",
-    4000
-  );
-  const explanationSection = sectionAfter(normalized, ["分步骤解析", "解析", "Solution", "Steps"]);
-  const explanation = explanationSection || normalized || finalAnswer;
-  const knowledgeText = sectionAfter(normalized, ["涉及知识点", "知识点", "Knowledge Points", "Knowledge"]);
-  const mistakeText = sectionAfter(normalized, ["易错点", "常见错误", "Common Mistakes"]);
-  const keySteps = splitList(explanationSection, [
-    outputLanguage === "en" ? "Read the question carefully." : "识别题干条件。",
-    outputLanguage === "en" ? "Determine the relevant concept." : "确定考查知识点。",
-    outputLanguage === "en" ? "Solve step by step." : "按步骤完成推导。",
-    outputLanguage === "en" ? "Check the final answer." : "核对最终答案。"
-  ]);
-  const knowledgePoints = splitList(knowledgeText, [topic]);
+  const topic = inferTopic(knowledgePoints, subject, outputLanguage);
+  const explanationFallback =
+    outputLanguage === "en"
+      ? "The model did not return a separate explanation section."
+      : "模型未返回单独解析段，已保留答案段中的结论。";
+  const answerFallback =
+    outputLanguage === "en"
+      ? "The answer is included in the explanation conclusion."
+      : "答案已包含在解析结论中。";
+  const explanation = compact(explanationSection, explanationFallback, 6000);
+  const finalAnswer = compact(answerSection, answerFallback, 2000);
+  const detectedText = compact([finalAnswer, explanation].filter(Boolean).join("\n\n"), topic, 2500);
+  const keySteps = deriveKeySteps(explanationSection || answerSection, outputLanguage);
 
   return {
-    title: compact(detectedText.split("\n")[0] || topic, topic, 120),
+    title: compact(stripMarkdown(topic), subject, 120),
     detectedText,
     subject,
     topic,
     difficulty: "medium",
     finalAnswer,
-    explanation: compact(explanation, explanation, 12000),
+    explanation,
     keySteps,
     knowledgePoints,
-    commonMistake: compact(
-      mistakeText,
-      outputLanguage === "en" ? "Be careful with conditions and calculation details." : "注意审题条件和关键计算步骤。",
-      1200
-    ),
-    similarIdeas: keySteps.slice(0, 3)
+    commonMistake: mistakeItems.join("\n"),
+    similarIdeas
   };
 }

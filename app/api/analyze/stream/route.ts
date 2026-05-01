@@ -8,10 +8,11 @@ import {
   JOB_PROGRESS,
   JOB_STAGE_TEXT,
   originalExplanationToAnalysisResult,
-  quizResultToLegacyQuiz,
+  quizResultToLegacyQuizForLanguage,
   updateJobStatus,
   type AnalysisJobStatus
 } from "@/lib/analysis-jobs";
+import { cleanAnalysisMarkdown, cleanAnalysisMarkdownLine } from "@/lib/analysisMarkdown";
 import { generateQuiz } from "@/lib/ai/generateQuiz";
 import {
   createOriginalExplanationFromMarkdown,
@@ -31,6 +32,7 @@ import {
 import type { OriginalExplanation, QuizResult } from "@/lib/ai/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { normalizeLanguage, type AppLanguage } from "@/lib/language";
+import { normalizeLatexText } from "@/lib/latex";
 import {
   createGenerationAllowancePayload,
   deductGenerationCredit,
@@ -403,47 +405,7 @@ async function generateQuizForStreamJob({
 }
 
 function cleanGeneratedMarkdown(markdown: string, language: AppLanguage) {
-  let text = String(markdown || "");
-
-  text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
-  text = text.replace(/<think>[\s\S]*$/gi, "");
-
-  const badLine =
-    /(Wait|Actually|Let'?s|Let me double-check|This contradicts|recompute|re-evaluate|mistake|correction|double-check|错误|重新检查|再核对|矛盾|纠正|等等|实际上|我先|我来分析|让我们分析|思考过程|推理过程|内部分析)/i;
-
-  text = text
-    .split("\n")
-    .filter((line) => !badLine.test(line.trim()))
-    .join("\n");
-
-  text = text.replace(/(^|\n)#{1,6}\s*(Question|题目|识别到的题目|题目识别|OCR|Image Description|图片描述)\s*\n[\s\S]*?(?=\n#{1,6}\s*(Answer|答案|Explanation|解析)|$)/gi, "$1");
-
-  if (language !== "en") {
-    text = text
-      .replace(/^##\s*Answer\s*$/gim, "## 答案")
-      .replace(/^##\s*Explanation\s*$/gim, "## 解析")
-      .replace(/^##\s*Key Points\s*$/gim, "## 知识点")
-      .replace(/^##\s*Common Mistakes\s*$/gim, "## 易错点")
-      .replace(/^##\s*Similar Ideas\s*$/gim, "## 类似题思路");
-  }
-
-  text = text.replace(/\n{3,}/g, "\n\n").trim();
-
-  return text;
-}
-
-function cleanLiveChunk(chunk: string) {
-  const badLine =
-    /(Wait|Actually|Let'?s|Let me double-check|This contradicts|recompute|re-evaluate|mistake|correction|double-check|错误|重新检查|再核对|矛盾|纠正|等等|实际上|我先|我来分析|让我们分析|思考过程|推理过程|内部分析)/i;
-
-  return String(chunk || "")
-    .split("\n")
-    .filter((line) => !badLine.test(line.trim()))
-    .join("\n");
-}
-
-function outputLanguageText(language: AppLanguage) {
-  return language === "en" ? "English" : "中文";
+  return normalizeLatexText(cleanAnalysisMarkdown(markdown, language));
 }
 
 function buildFastVisionMessages({
@@ -461,9 +423,9 @@ function buildFastVisionMessages({
     ? `你是一个简洁的数学/理科学习解析助手。
 
 必须只用中文输出，不能输出英文句子。
-只输出最终解析，不能输出思考过程、推理草稿、内部分析、自我检查、自我纠错。
+只输出最终解析，不能输出 thinking、reasoning、chain of thought、思考过程、推理草稿、内部分析、自我检查、自我纠错。
 禁止出现：Wait、Actually、Let me double-check、重新检查、再核对、矛盾、错误、纠正、我先思考、我来分析。
-不要输出题目识别、OCR 原文、图片描述、手机截图、浏览器边框。
+不要输出题目识别、OCR 原文、图片描述、根据图片可见信息、图片内容复杂、系统已尝试、手机截图、浏览器边框。
 不要长篇推导，只保留最关键步骤。
 
 输出格式只能是：
@@ -475,20 +437,22 @@ function buildFastVisionMessages({
 
 ## 解析
 ### (a)
-关键步骤，最多 3 行。
+关键步骤，最多 3-5 行。
 ### (b)
-关键步骤，最多 3 行。
+关键步骤，最多 3-5 行。
 ### (c)
-关键步骤，最多 3 行。
+关键步骤，最多 3-5 行。
 
 ## 知识点
-- 2 到 4 条短要点
+- 只保留真正相关的 2 到 4 条短要点
 
 ## 易错点
-- 1 到 2 条短要点
+- 只保留和本题相关的 1 到 2 条短要点
 
 ## 类似题思路
-- 1 到 2 条短要点
+- 只保留 1 到 2 条真正有帮助的迁移思路
+
+答案必须尽量具体，不要写“见解析”。知识点、易错点、类似题思路不要写空话。
 
 公式要求：
 - 所有公式必须能被 KaTeX 渲染。
@@ -507,7 +471,8 @@ Use English only.
 Output final explanation only.
 Do not output Thinking, Reasoning, Chain of Thought, internal analysis, self-checking, or corrections.
 Do not write Wait, Actually, Let me double-check, recompute, contradiction, mistake, or correction.
-Keep only key steps.
+Do not output OCR, question recognition, image description, or screenshot descriptions.
+Keep only key steps and specific final answers. Do not write "see explanation".
 
 Format:
 ## Answer
@@ -636,7 +601,7 @@ async function createCachedResponse({
     error_message: null
   });
 
-  const markdown = markdownFromOriginalExplanation(cached.original);
+  const markdown = markdownFromOriginalExplanation(cached.original, language);
 
   return {
     jobId: row.id as string,
@@ -653,7 +618,7 @@ async function createCachedResponse({
       originalExplanation: cached.original,
       analysis: originalExplanationToAnalysisResult(cached.original),
       quizResult,
-      quiz: quizResult ? quizResultToLegacyQuiz(quizResult, cached.original) : null
+      quiz: quizResult ? quizResultToLegacyQuizForLanguage(quizResult, cached.original, language) : null
     }
   };
 }
@@ -699,9 +664,28 @@ export async function POST(request: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         let fullMarkdown = "";
+        let pendingLiveLine = "";
 
         const send = (event: string, payload: Record<string, unknown>) => {
           controller.enqueue(encoder.encode(sseEncode(event, payload)));
+        };
+
+        const flushLiveText = (text: string, final = false) => {
+          pendingLiveLine += String(text || "").replace(/\r\n/g, "\n");
+          const lines = pendingLiveLine.split("\n");
+
+          if (final) {
+            pendingLiveLine = "";
+          } else {
+            pendingLiveLine = lines.pop() || "";
+          }
+
+          const visible = lines
+            .map((line) => cleanAnalysisMarkdownLine(line, language))
+            .filter((line): line is string => line !== null)
+            .join("\n");
+
+          return visible ? `${visible}\n` : "";
         };
 
         send("meta", {
@@ -723,6 +707,7 @@ export async function POST(request: Request) {
             cached: false
           });
 
+          const allowancePromise = getGenerationAllowance(admin, user.id);
           const buffer = Buffer.from(await file.arrayBuffer());
           const imageHash = createHash(buffer);
           const base64 = buffer.toString("base64");
@@ -732,12 +717,12 @@ export async function POST(request: Request) {
             jobId: null,
             status: "queued",
             progress: 18,
-            stage: "正在检查会员与缓存",
+            stage: process.env.ENABLE_STREAM_CACHE === "1" ? "正在检查会员与缓存" : "正在检查会员额度",
             language,
             cached: false
           });
 
-          const allowance = await getGenerationAllowance(admin, user.id);
+          const allowance = await allowancePromise;
 
           if (allowance.isBanned) {
             throw new AnalyzeStreamError("账户状态异常，请联系客服处理。微信：15155132939", 403);
@@ -794,31 +779,8 @@ export async function POST(request: Request) {
 
           send("meta", {
             jobId: null,
-            status: "queued",
-            progress: 28,
-            stage: "正在创建任务",
-            language,
-            cached: false,
-            ...createGenerationAllowancePayload(allowance)
-          });
-
-          const created = await createJob(admin, {
-            user_id: user.id,
             status: "generating_explanation",
-            progress: JOB_PROGRESS.generating_explanation,
-            stage: "正在调用 Qwen VL",
-            language,
-            image_hash: imageHash,
-            quiz_answers: {},
-            wrong_explanations: {}
-          });
-
-          jobId = created.id as string;
-
-          send("meta", {
-            jobId,
-            status: "generating_explanation",
-            progress: 40,
+            progress: 35,
             stage: "正在调用 Qwen VL",
             language,
             cached: false,
@@ -843,7 +805,7 @@ export async function POST(request: Request) {
             }
           )) {
             fullMarkdown += chunk.text;
-            const visibleText = cleanLiveChunk(chunk.text);
+            const visibleText = flushLiveText(chunk.text);
 
             if (!visibleText) {
               continue;
@@ -853,6 +815,16 @@ export async function POST(request: Request) {
               text: visibleText,
               progress: 65,
               stage: "正在生成解析..."
+            });
+          }
+
+          const tailText = flushLiveText("", true);
+
+          if (tailText) {
+            send("delta", {
+              text: tailText,
+              progress: 68,
+              stage: "正在整理解析..."
             });
           }
 
@@ -873,12 +845,22 @@ export async function POST(request: Request) {
           const ocrHash = detectedText ? createTextHash(detectedText) : null;
           const nextStatus = statusForMode(mode);
 
-          const row = await updateJobAndReturn(admin, jobId as string, nextStatus, {
+          const row = await createJob(admin, {
+            user_id: user.id,
+            status: nextStatus,
+            progress: JOB_PROGRESS[nextStatus],
+            stage: JOB_STAGE_TEXT[nextStatus],
+            language,
+            image_hash: imageHash,
             detected_text: detectedText,
             ...(ocrHash ? { ocr_hash: ocrHash } : {}),
             original_explanation: originalExplanation,
+            quiz_answers: {},
+            wrong_explanations: {},
             error_message: null
           });
+
+          jobId = row.id as string;
 
           const usageLogged = await writeUsageLog({
             admin,
@@ -1010,7 +992,7 @@ export async function POST(request: Request) {
             progress: 100,
             stage: fullMarkdown.trim() ? "解析中断，已保留已生成内容" : "生成失败，可重试",
             errorMessage: message,
-            analysisText: fullMarkdown
+            analysisText: cleanGeneratedMarkdown(fullMarkdown, language)
           });
         } finally {
           controller.close();

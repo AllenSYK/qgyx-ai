@@ -18,8 +18,13 @@ export function getStoredLanguage(): AppLanguage {
 }
 
 export function setStoredLanguage(language: AppLanguage) {
-  window.localStorage.setItem(STORAGE_KEY, language);
-  window.dispatchEvent(new CustomEvent<AppLanguage>(CHANGE_EVENT, { detail: language }));
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const nextLanguage = normalizeLanguage(language);
+  window.localStorage.setItem(STORAGE_KEY, nextLanguage);
+  window.dispatchEvent(new CustomEvent<AppLanguage>(CHANGE_EVENT, { detail: nextLanguage }));
 }
 
 export function useLanguagePreference() {

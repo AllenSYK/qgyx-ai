@@ -32,7 +32,7 @@ export function normalizeOriginalExplanationShape(explanation: OriginalExplanati
   const similarIdeas =
     Array.isArray(explanation.similarIdeas) && explanation.similarIdeas.length > 0
       ? explanation.similarIdeas
-      : keySteps.slice(0, 4);
+      : [];
   const knowledgePoints =
     Array.isArray(explanation.knowledgePoints) && explanation.knowledgePoints.length > 0
       ? explanation.knowledgePoints
