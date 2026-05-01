@@ -24,7 +24,6 @@ import QuizCard from "@/components/QuizCard";
 import ReviewCard from "@/components/ReviewCard";
 import { useGenerationTask } from "@/components/GenerationTaskProvider";
 import { useLanguagePreference } from "@/components/LanguageSwitcher";
-import { compressImageForUpload } from "@/lib/client/compressImage";
 import type { StudyMode, StudyRecordPayload, WrongQuestion } from "@/types/quiz";
 
 type UploadCardProps = {
@@ -230,10 +229,8 @@ export default function UploadCard({
     setSubmitting(true);
 
     try {
-      const uploadFile = fileKind === "image" ? await compressImageForUpload(file) : file;
       await startGeneration({
-        file: uploadFile,
-        originalFile: uploadFile === file ? undefined : file,
+        file,
         mode: studyMode,
         language
       });

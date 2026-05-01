@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { AppLanguage } from "@/lib/language";
+import { compressImageForUpload } from "@/lib/client/compressImage";
 import type { AnalysisResult, Quiz, StudyMode, WrongQuestion } from "@/types/quiz";
 
 type FileMeta = {
@@ -65,7 +66,7 @@ type GenerationTaskContextValue = {
   updateTask: (patch: Partial<GenerationTaskState>) => void;
 };
 
-const STORAGE_KEY = "qgyx:generation-tasks-v9";
+const STORAGE_KEY = "qgyx:generation-tasks-v11";
 
 const initialTask: GenerationTaskState = {
   id: "",
@@ -484,7 +485,21 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
         return;
       }
 
-      const uploadFile = file;
+      let uploadFile = file;
+
+      if (kind === "image") {
+        updateTaskById(taskId, {
+          progress: 18,
+          step: "正在优化图片，准备上传"
+        });
+
+        uploadFile = await compressImageForUpload(file);
+
+        updateTaskById(taskId, {
+          progress: 24,
+          step: "图片已优化，正在上传"
+        });
+      }
 
       if (kind === "image") {
         if (uploadFile.size > 5 * 1024 * 1024) {

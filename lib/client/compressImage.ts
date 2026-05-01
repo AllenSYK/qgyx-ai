@@ -1,7 +1,7 @@
 ﻿const ONE_MB = 1024 * 1024;
-const COMPRESS_THRESHOLD = 300 * 1024;
+const COMPRESS_THRESHOLD = 700 * 1024;
 const MAX_EDGE = 1280;
-const JPEG_QUALITY = 0.82;
+const JPEG_QUALITY = 0.8;
 
 function isCompressibleImage(file: File) {
   return file.type.startsWith("image/") && !file.name.toLowerCase().endsWith(".pdf");
@@ -71,7 +71,7 @@ export async function compressImageForUpload(file: File) {
     }
 
     if (blob.size > ONE_MB) {
-      const smallerBlob = await canvasToJpegBlob(canvas, 0.74);
+      const smallerBlob = await canvasToJpegBlob(canvas, 0.72);
       if (smallerBlob && smallerBlob.size < blob.size) {
         blob = smallerBlob;
       }
