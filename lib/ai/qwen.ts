@@ -111,7 +111,7 @@ function resolveProvider(model: string) {
     return {
       apiKey,
       baseUrl: QWEN_BASE_URL,
-      provider: "qwen"
+      provider: "qwen" as const
     };
   }
 
@@ -124,7 +124,7 @@ function resolveProvider(model: string) {
   return {
     apiKey,
     baseUrl: DEEPSEEK_BASE_URL,
-    provider: "deepseek"
+    provider: "deepseek" as const
   };
 }
 
@@ -155,6 +155,14 @@ function mapAiHttpError(status: number, rawText: string) {
   return text || `AI 服务请求失败：${status}`;
 }
 
+function cleanPayloadForProvider(provider: "qwen" | "deepseek", payload: Record<string, unknown>) {
+  if (provider === "deepseek") {
+    return Object.fromEntries(Object.entries(payload).filter(([key]) => key !== "enable_thinking"));
+  }
+
+  return payload;
+}
+
 export async function postQwenChatCompletion(body: Record<string, unknown>) {
   const model = typeof body.model === "string" ? body.model : QWEN_MODEL;
 
@@ -163,14 +171,11 @@ export async function postQwenChatCompletion(body: Record<string, unknown>) {
   }
 
   const { apiKey, baseUrl, provider } = resolveProvider(model);
-  const defaultTimeoutMs = provider === "qwen" ? 90000 : 45000;
-  const minimumTimeoutMs = provider === "qwen" ? 90000 : 1000;
+  const defaultTimeoutMs = provider === "qwen" ? 120000 : 60000;
+  const minimumTimeoutMs = provider === "qwen" ? 45000 : 1000;
   const timeoutMs = typeof body.timeoutMs === "number" ? Math.max(minimumTimeoutMs, body.timeoutMs) : defaultTimeoutMs;
   const { timeoutMs: _timeoutMs, ...payload } = body;
-  const requestPayload =
-    provider === "deepseek"
-      ? Object.fromEntries(Object.entries(payload).filter(([key]) => key !== "enable_thinking"))
-      : payload;
+  const requestPayload = cleanPayloadForProvider(provider, payload);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -185,13 +190,15 @@ export async function postQwenChatCompletion(body: Record<string, unknown>) {
       model
     }),
     signal: controller.signal
-  }).catch((error) => {
-    if (error instanceof Error && error.name === "AbortError") {
-      throw new AiTimeoutError(`AI 请求超时（${Math.round(timeoutMs / 1000)} 秒）。`);
-    }
+  })
+    .catch((error) => {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new AiTimeoutError(`AI 请求超时（${Math.round(timeoutMs / 1000)} 秒）。`);
+      }
 
-    throw error;
-  }).finally(() => clearTimeout(timer));
+      throw error;
+    })
+    .finally(() => clearTimeout(timer));
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -215,6 +222,10 @@ export async function postQwenChatCompletion(body: Record<string, unknown>) {
 export async function* streamQwenChatCompletion(
   body: Record<string, unknown>,
   options: {
+    /**
+     * 0 表示不启用首 token 超时。
+     * 这里默认 0，逻辑和 Chatbox 更接近：只要连接建立，就耐心等模型流式输出。
+     */
     firstTokenTimeoutMs?: number;
     totalTimeoutMs?: number;
   } = {}
@@ -226,14 +237,20 @@ export async function* streamQwenChatCompletion(
   }
 
   const { apiKey, baseUrl, provider } = resolveProvider(model);
-  const firstTokenTimeoutMs = Math.max(1000, options.firstTokenTimeoutMs ?? 15000);
-  const totalTimeoutMs = Math.max(firstTokenTimeoutMs, options.totalTimeoutMs ?? 180000);
+
+  const rawFirstTokenTimeoutMs = options.firstTokenTimeoutMs ?? 0;
+  const firstTokenTimeoutMs =
+    rawFirstTokenTimeoutMs <= 0 ? 0 : Math.max(30000, rawFirstTokenTimeoutMs);
+
+  const totalTimeoutMs = Math.max(
+    firstTokenTimeoutMs || 0,
+    options.totalTimeoutMs ?? (provider === "qwen" ? 180000 : 90000)
+  );
+
   const { timeoutMs: _timeoutMs, ...payload } = body;
-  const requestPayload =
-    provider === "deepseek"
-      ? Object.fromEntries(Object.entries(payload).filter(([key]) => key !== "enable_thinking"))
-      : payload;
+  const requestPayload = cleanPayloadForProvider(provider, payload);
   const controller = new AbortController();
+
   let receivedFirstToken = false;
   let firstTokenTimedOut = false;
   let totalTimedOut = false;
@@ -241,10 +258,15 @@ export async function* streamQwenChatCompletion(
   lastAiModel = model;
   lastAiUsage = null;
 
-  const firstTokenTimer = setTimeout(() => {
-    firstTokenTimedOut = true;
-    controller.abort();
-  }, firstTokenTimeoutMs);
+  let firstTokenTimer: ReturnType<typeof setTimeout> | null = null;
+
+  if (firstTokenTimeoutMs > 0) {
+    firstTokenTimer = setTimeout(() => {
+      firstTokenTimedOut = true;
+      controller.abort();
+    }, firstTokenTimeoutMs);
+  }
+
   const totalTimer = setTimeout(() => {
     totalTimedOut = true;
     controller.abort();
@@ -267,7 +289,7 @@ export async function* streamQwenChatCompletion(
       signal: controller.signal
     });
   } catch (error) {
-    clearTimeout(firstTokenTimer);
+    if (firstTokenTimer) clearTimeout(firstTokenTimer);
     clearTimeout(totalTimer);
 
     if (error instanceof Error && error.name === "AbortError") {
@@ -284,14 +306,14 @@ export async function* streamQwenChatCompletion(
   }
 
   if (!response.ok) {
-    clearTimeout(firstTokenTimer);
+    if (firstTokenTimer) clearTimeout(firstTokenTimer);
     clearTimeout(totalTimer);
     const errorText = await response.text();
     throw new AiModelError(mapAiHttpError(response.status, errorText), response.status);
   }
 
   if (!response.body) {
-    clearTimeout(firstTokenTimer);
+    if (firstTokenTimer) clearTimeout(firstTokenTimer);
     clearTimeout(totalTimer);
     throw new Error("AI 服务未返回可读取的流式响应。");
   }
@@ -329,6 +351,19 @@ export async function* streamQwenChatCompletion(
     }
   }
 
+  function getParsedText(parsed: {
+    choices?: Array<{
+      delta?: {
+        content?: string;
+      };
+      message?: {
+        content?: string;
+      };
+    }>;
+  }) {
+    return parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.message?.content || "";
+  }
+
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -359,12 +394,12 @@ export async function* streamQwenChatCompletion(
           lastAiUsage = parsed.usage;
         }
 
-        const text = parsed.choices?.[0]?.delta?.content || parsed.choices?.[0]?.message?.content || "";
+        const text = getParsedText(parsed);
 
         if (text) {
           if (!receivedFirstToken) {
             receivedFirstToken = true;
-            clearTimeout(firstTokenTimer);
+            if (firstTokenTimer) clearTimeout(firstTokenTimer);
           }
 
           yield {
@@ -377,7 +412,7 @@ export async function* streamQwenChatCompletion(
 
     const tail = buffer.trim();
     const parsedTail = tail ? parseBlock(tail) : null;
-    const tailText = parsedTail?.choices?.[0]?.delta?.content || parsedTail?.choices?.[0]?.message?.content || "";
+    const tailText = parsedTail ? getParsedText(parsedTail) : "";
 
     if (parsedTail?.usage) {
       lastAiUsage = parsedTail.usage;
@@ -386,7 +421,7 @@ export async function* streamQwenChatCompletion(
     if (tailText) {
       if (!receivedFirstToken) {
         receivedFirstToken = true;
-        clearTimeout(firstTokenTimer);
+        if (firstTokenTimer) clearTimeout(firstTokenTimer);
       }
 
       yield {
@@ -407,10 +442,30 @@ export async function* streamQwenChatCompletion(
 
     throw error;
   } finally {
-    clearTimeout(firstTokenTimer);
+    if (firstTokenTimer) clearTimeout(firstTokenTimer);
     clearTimeout(totalTimer);
     reader.releaseLock();
   }
+}
+
+export async function collectQwenStreamText(
+  body: Record<string, unknown>,
+  options: {
+    firstTokenTimeoutMs?: number;
+    totalTimeoutMs?: number;
+  } = {}
+) {
+  let text = "";
+
+  for await (const chunk of streamQwenChatCompletion(body, options)) {
+    text += chunk.text;
+  }
+
+  if (!text.trim()) {
+    throw new Error("AI 服务没有返回有效内容。");
+  }
+
+  return text.trim();
 }
 
 export function readAssistantText(data: { choices?: Array<{ message?: { content?: string } }> }) {
