@@ -668,8 +668,8 @@ export default function UploadCard({
             ) : null}
           </div>
 
-          <div className="max-h-[720px] overflow-y-auto rounded-3xl border border-slate-200 bg-slate-50 p-4">
-            <MarkdownRenderer as="div" text={task.analysisText} className="text-sm leading-7 text-slate-800" />
+          <div className="max-h-[720px] overflow-y-auto rounded-3xl border border-blue-100 bg-white p-4 shadow-inner">
+            <MarkdownRenderer as="div" text={task.analysisText} className="text-[15px] leading-7 text-slate-950" />
           </div>
         </section>
       ) : null}
@@ -688,7 +688,7 @@ export default function UploadCard({
             <div className="space-y-4">
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                 <div className="mb-2 text-sm font-semibold text-slate-500">题目识别结果</div>
-                <MarkdownRenderer as="div" text={task.analysis.recognizedText} className="text-sm leading-7 text-slate-800" />
+                <MarkdownRenderer as="div" text={task.analysis.recognizedText} className="text-[15px] leading-7 text-slate-950" />
               </div>
 
               <div className="rounded-3xl border border-blue-100 bg-blue-50 p-4">
@@ -698,7 +698,7 @@ export default function UploadCard({
 
               <div className="rounded-3xl border border-slate-200 bg-white p-4">
                 <div className="mb-2 text-sm font-semibold text-slate-500">分步骤解析</div>
-                <MarkdownRenderer as="div" text={task.analysis.explanation} className="text-sm leading-7 text-slate-800" />
+                <MarkdownRenderer as="div" text={task.analysis.explanation} className="text-[15px] leading-7 text-slate-950" />
               </div>
             </div>
 

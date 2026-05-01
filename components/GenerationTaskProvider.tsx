@@ -66,7 +66,7 @@ type GenerationTaskContextValue = {
   updateTask: (patch: Partial<GenerationTaskState>) => void;
 };
 
-const STORAGE_KEY = "qgyx:generation-tasks-v13";
+const STORAGE_KEY = "qgyx:generation-tasks-v14";
 
 const initialTask: GenerationTaskState = {
   id: "",
@@ -221,9 +221,9 @@ function applyServerPayload(task: GenerationTaskState, payload: Record<string, u
       ? [
           `## 答案\n${analysis.answer}`,
           `## 解析\n${analysis.explanation}`,
-          analysis.knowledgePoints?.length ? `## 涉及知识点\n${analysis.knowledgePoints.map((item) => `- ${item}`).join("\n")}` : "",
+          analysis.knowledgePoints?.length ? `## 涉及知识点\n${analysis.knowledgePoints.slice(0, 4).map((item) => `- ${item}`).join("\n")}` : "",
           analysis.commonMistakes ? `## 易错点\n${analysis.commonMistakes}` : "",
-          analysis.similarIdeas?.length ? `## 类似题目思路\n${analysis.similarIdeas.map((item) => `- ${item}`).join("\n")}` : ""
+          analysis.similarIdeas?.length ? `## 类似题目思路\n${analysis.similarIdeas.slice(0, 2).map((item) => `- ${item}`).join("\n")}` : ""
         ].filter(Boolean).join("\n\n")
       : task.analysisText),
     remainingCredits:
