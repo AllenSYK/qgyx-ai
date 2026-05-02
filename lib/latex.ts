@@ -148,7 +148,6 @@ const UNICODE_MATH_MAP: Record<string, string> = {
   "‡": "\\ddagger",
   "⋆": "\\star",
   "∘": "\\circ",
-  "⊕": "\\oplus",
   "⊖": "\\ominus",
   "⊘": "\\oslash",
   "⊙": "\\odot",
