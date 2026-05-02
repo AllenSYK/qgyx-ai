@@ -51,9 +51,9 @@ function normalizeLatexCommands(input: string): string {
     .replace(/\u2260/g, "\\neq")
     .replace(/\u2248/g, "\\approx")
     .replace(/π/g, "\\pi")
-    .replace(//g, "\\sqrt")
-    .replace(//g, "\\times")
-    .replace(//g, "\\div");
+.replace(/\u221a/g, "\\sqrt")
+.replace(/\u00d7/g, "\\times")
+.replace(/\u00f7/g, "\\div");
 
   text = text
     .replace(/\\frac\s*\{\s*\\pi\s*\}\s*\{\s*3\s*\}/g, "\\frac{\\pi}{3}")
