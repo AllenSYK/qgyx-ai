@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { generateWrongQuestionInsights } from "@/lib/ai";
 import { assertUserNotBanned, getCurrentUser } from "@/lib/auth";
+import { normalizeQuizQuestionsMath, normalizeWrongQuestionsMath } from "@/lib/quiz-math";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { StudyRecordPayload, WrongQuestion } from "@/types/quiz";
 
@@ -47,8 +48,10 @@ export async function POST(request: Request) {
     const correctCount = Math.max(0, Math.min(body.correctCount, body.questionCount));
     const accuracy = Number((correctCount / body.questionCount).toFixed(4));
     const rawWrongQuestions = Array.isArray(body.wrongQuestions) ? body.wrongQuestions : [];
-    const enrichedWrongQuestions: WrongQuestion[] =
-      rawWrongQuestions.length > 0 ? await generateWrongQuestionInsights(rawWrongQuestions) : [];
+    const quizQuestions = normalizeQuizQuestionsMath(body.questions || []);
+    const enrichedWrongQuestions: WrongQuestion[] = normalizeWrongQuestionsMath(
+      rawWrongQuestions.length > 0 ? await generateWrongQuestionInsights(rawWrongQuestions) : []
+    );
     const knowledgePoints = uniqueStrings([
       ...(body.knowledgePoints || []),
       ...enrichedWrongQuestions.map((question) => question.knowledgePoint)
@@ -83,7 +86,7 @@ export async function POST(request: Request) {
               analysis_record_id: body.analysisRecordId || null,
               quiz_title: body.quizTitle,
               mode: body.mode || "quiz",
-              questions: body.questions || [],
+              questions: quizQuestions,
               answers: body.answers || {},
               score: correctCount,
               wrong_questions: enrichedWrongQuestions,
@@ -97,7 +100,7 @@ export async function POST(request: Request) {
             analysis_record_id: body.analysisRecordId || null,
             quiz_title: body.quizTitle,
             mode: body.mode || "quiz",
-            questions: body.questions || [],
+            questions: quizQuestions,
             answers: body.answers || {},
             score: correctCount,
             wrong_questions: enrichedWrongQuestions,

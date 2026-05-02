@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, CheckCircle2, FileQuestion, ScanSearch, XCircle } from "lucide-react";
 import MathText from "@/components/MathText";
 import MobileBottomNav from "@/components/MobileBottomNav";
+import QuizMathText, { InlineQuizMathText } from "@/components/QuizMathText";
 import { getCurrentUser, getProfile } from "@/lib/auth";
 import { translateTagLabel, formatModeLabel } from "@/lib/labels";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -49,9 +50,13 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-function optionLabel(options: string[] | undefined, index: number | undefined) {
+function answerLabel(index: number | undefined) {
+  return typeof index === "number" ? `${String.fromCharCode(65 + index)}. ` : "";
+}
+
+function optionText(options: string[] | undefined, index: number | undefined) {
   if (!options || typeof index !== "number") return "未作答";
-  return `${String.fromCharCode(65 + index)}. ${options[index] || ""}`;
+  return options[index] || "";
 }
 
 export default async function RecordDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -128,26 +133,33 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
                       {isCorrect ? "答对" : "答错"}
                     </span>
                   </div>
-                  <MathText as="div" text={question.question} className="font-semibold leading-7 text-slate-950" />
+                  <QuizMathText as="div" text={question.question} className="font-semibold leading-7 text-slate-950" />
                   <div className="mt-4 grid gap-3 sm:grid-cols-2">
                     <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-700">
                       <span className="font-semibold">你的答案：</span>
-                      <MathText text={optionLabel(question.options, userAnswerIndex)} />
+                      <span>{answerLabel(userAnswerIndex)}</span>
+                      <InlineQuizMathText text={optionText(question.options, userAnswerIndex)} />
                     </div>
                     <div className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-700">
                       <span className="font-semibold">正确答案：</span>
-                      <MathText text={optionLabel(question.options, question.answerIndex)} />
+                      <span>{answerLabel(question.answerIndex)}</span>
+                      <InlineQuizMathText text={optionText(question.options, question.answerIndex)} />
                     </div>
                   </div>
                   <div className="mt-4 rounded-2xl bg-white px-4 py-3 text-sm leading-7 text-slate-700">
                     <span className="font-semibold">详细解析：</span>
-                    <MathText as="div" text={question.explanation || "本题未预生成解析；新版本仅对错题按需生成解析。"} />
+                    <QuizMathText as="div" text={question.explanation || "本题未预生成解析；新版本仅对错题按需生成解析。"} />
                   </div>
                   {wrong ? (
                     <div className="mt-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-900">
                       <div className="font-semibold">错因分析</div>
-                      <p className="mt-1">{String(wrong.errorReason || wrong.error_reason || "暂无错因分析")}</p>
-                      {wrong.improvementSuggestion || wrong.improvement_suggestion ? <p className="mt-2">建议：{String(wrong.improvementSuggestion || wrong.improvement_suggestion)}</p> : null}
+                      <QuizMathText as="div" text={String(wrong.errorReason || wrong.error_reason || "暂无错因分析")} className="mt-1" />
+                      {wrong.improvementSuggestion || wrong.improvement_suggestion ? (
+                        <div className="mt-2">
+                          <span>建议：</span>
+                          <InlineQuizMathText text={String(wrong.improvementSuggestion || wrong.improvement_suggestion)} />
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   <div className="mt-4 flex flex-wrap gap-2">

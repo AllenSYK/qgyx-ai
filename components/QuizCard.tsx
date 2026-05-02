@@ -11,7 +11,7 @@ import {
   XCircle
 } from "lucide-react";
 import clsx from "clsx";
-import MarkdownRenderer from "@/components/MarkdownRenderer";
+import QuizMathText, { InlineQuizMathText } from "@/components/QuizMathText";
 import type { Quiz, StudyMode, StudyRecordPayload, WrongQuestion } from "@/types/quiz";
 
 type QuizCardProps = {
@@ -346,7 +346,7 @@ export default function QuizCard({
               {quiz.subject || "AI Quiz"} · {quiz.questionType || "同类型练习"}
             </div>
             <h2 className="text-xl font-semibold text-slate-950 sm:text-2xl">{quiz.title}</h2>
-            <MarkdownRenderer as="div" text={quiz.summary} className="mt-2 text-sm leading-6 text-slate-600" />
+            <QuizMathText as="div" text={quiz.summary} className="mt-2 text-sm leading-6 text-slate-600" />
           </div>
 
           <div className="rounded-2xl border border-blue-100 bg-white/85 px-4 py-3 text-sm text-slate-600 shadow-sm">
@@ -373,7 +373,7 @@ export default function QuizCard({
               </div>
             </div>
 
-            <MarkdownRenderer as="div" text={current.question} className="text-lg font-semibold leading-8 text-slate-950" />
+            <QuizMathText as="div" text={current.question} className="text-lg font-semibold leading-8 text-slate-950" />
           </div>
 
           <div className="rounded-[28px] border border-blue-100 bg-white/85 p-4">
@@ -408,7 +408,7 @@ export default function QuizCard({
                       {String.fromCharCode(65 + index)}
                     </span>
 
-                    <MarkdownRenderer as="span" text={option} className="leading-6" />
+                    <InlineQuizMathText text={option} className="leading-6" />
 
                     <span className="ml-auto shrink-0">
                       {hasAnswered && isAnswer ? <CheckCircle2 className="h-5 w-5 text-emerald-600" /> : null}
@@ -430,7 +430,7 @@ export default function QuizCard({
                 )}
               >
                 <div className="mb-1 font-semibold">{isCorrect ? "回答正确" : "回答错误"}</div>
-                <MarkdownRenderer
+                <QuizMathText
                   as="div"
                   text={
                     answerMessages[currentIndex] ||
@@ -521,24 +521,24 @@ export default function QuizCard({
                   return (
                     <article key={question.id || index} className="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-sm leading-6 text-rose-950">
                       <div className="mb-2 font-semibold">错题解析 · {question.knowledgePoint || `题目 ${index + 1}`}</div>
-                      <MarkdownRenderer as="div" text={question.question} className="mb-3 font-semibold" />
+                      <QuizMathText as="div" text={question.question} className="mb-3 font-semibold" />
                       {explanation.whyWrong ? (
                         <div>
                           <span className="font-semibold">为什么错：</span>
-                          <MarkdownRenderer as="span" text={explanation.whyWrong} className="ml-1" />
+                          <InlineQuizMathText text={explanation.whyWrong} className="ml-1" />
                         </div>
                       ) : null}
                       {explanation.correctMethod ? (
                         <div className="mt-2">
                           <span className="font-semibold">正确思路：</span>
-                          <MarkdownRenderer as="span" text={explanation.correctMethod} className="ml-1" />
+                          <InlineQuizMathText text={explanation.correctMethod} className="ml-1" />
                         </div>
                       ) : null}
-                      {explanation.explanation ? <MarkdownRenderer as="div" text={explanation.explanation} className="mt-2" /> : null}
+                      {explanation.explanation ? <QuizMathText as="div" text={explanation.explanation} className="mt-2" /> : null}
                       {explanation.similarTip ? (
                         <div className="mt-2">
                           <span className="font-semibold">迁移提醒：</span>
-                          <MarkdownRenderer as="span" text={explanation.similarTip} className="ml-1" />
+                          <InlineQuizMathText text={explanation.similarTip} className="ml-1" />
                         </div>
                       ) : null}
                     </article>

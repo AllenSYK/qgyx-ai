@@ -5,6 +5,7 @@ import type {
   WrongExplanation
 } from "@/lib/ai/schema";
 import { normalizeLatexText } from "@/lib/latex";
+import { normalizeQuizMathText } from "@/lib/quiz-math";
 
 function cleanText(value: string) {
   return normalizeLatexText(value);
@@ -45,8 +46,8 @@ export function cleanOriginalExplanationMath(value: OriginalExplanation): Origin
 export function cleanQuizQuestionMath(value: QuizQuestion): QuizQuestion {
   return {
     ...value,
-    question: cleanText(value.question),
-    options: value.options.map(cleanText),
+    question: normalizeQuizMathText(value.question),
+    options: value.options.map((option) => normalizeQuizMathText(option)),
     topic: cleanText(value.topic)
   };
 }

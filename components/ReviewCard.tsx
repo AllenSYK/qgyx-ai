@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Brain, NotebookPen, RefreshCw } from "lucide-react";
 import MarkdownRenderer from "@/components/MarkdownRenderer";
 import QuizCard from "@/components/QuizCard";
+import QuizMathText, { InlineQuizMathText } from "@/components/QuizMathText";
 import type { Quiz, ReviewResult, WrongQuestion } from "@/types/quiz";
 
 type ReviewCardProps = {
@@ -110,19 +111,19 @@ export default function ReviewCard({ originalAnalysisText, wrongQuestions }: Rev
           <div className="grid gap-4 lg:grid-cols-2">
             {review.mistakeAnalysis.map((item, index) => (
               <article key={`${item.question}-${index}`} className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                <MarkdownRenderer as="h3" text={item.question} className="mb-3 font-semibold leading-7 text-slate-950" />
+                <QuizMathText as="div" text={item.question} className="mb-3 font-semibold leading-7 text-slate-950" />
                 <div className="space-y-2 text-sm leading-6 text-slate-700">
                   <p>
                     <span className="font-semibold text-rose-700">错因：</span>
-                    <MarkdownRenderer text={item.userMistake} className="ml-1" />
+                    <InlineQuizMathText text={item.userMistake} className="ml-1" />
                   </p>
                   <p>
                     <span className="font-semibold text-blue-700">思路：</span>
-                    <MarkdownRenderer text={item.correctThinking} className="ml-1" />
+                    <InlineQuizMathText text={item.correctThinking} className="ml-1" />
                   </p>
                   <p>
                     <span className="font-semibold text-emerald-700">知识点：</span>
-                    <MarkdownRenderer text={item.keyPoint} className="ml-1" />
+                    <InlineQuizMathText text={item.keyPoint} className="ml-1" />
                   </p>
                 </div>
               </article>
@@ -149,4 +150,3 @@ export default function ReviewCard({ originalAnalysisText, wrongQuestions }: Rev
     </section>
   );
 }
-

@@ -6,6 +6,7 @@ import { applyFinalAnswerRulesToPayload, cleanFinalAnswerChunk } from "@/lib/ai/
 import type { AnalysisResult, ErrorType, Quiz, QuizQuestion, ReviewResult, WrongQuestion } from "@/types/quiz";
 import { fixLatex } from "@/lib/latex";
 import { mathOutputInstruction } from "@/lib/language";
+import { normalizeQuizMathText } from "@/lib/quiz-math";
 
 export { fixLatex, normalizeLatexText } from "@/lib/latex";
 
@@ -132,6 +133,7 @@ function normalizeOptionText(input: string) {
   let text = fixLatex(input.trim());
 
   text = text.replace(/^[A-D][\s:：.、)-]+/i, "").trim();
+  text = normalizeQuizMathText(text);
 
   if (/^\$[\s\S]*\$$/.test(text)) {
     return text;
@@ -155,7 +157,7 @@ function normalizeOptionText(input: string) {
 
   latex = latex.replace(/(?<!\\)\b([0-9]+)\s*\/\s*([0-9]+)\b/g, "\\frac{$1}{$2}");
 
-  return fixLatex(`$${latex}$`);
+  return normalizeQuizMathText(`$${latex}$`);
 }
 
 function normalizeOptions(input: unknown): string[] {
@@ -260,11 +262,11 @@ function normalizeQuestion(input: unknown): QuizQuestion {
               : "核心知识点";
 
   return {
-    question: fixLatex(question),
+    question: normalizeQuizMathText(fixLatex(question)),
     options,
     answerIndex,
-    explanation: fixLatex(explanation),
-    knowledgePoint: fixLatex(knowledgePoint),
+    explanation: normalizeQuizMathText(fixLatex(explanation)),
+    knowledgePoint: normalizeQuizMathText(fixLatex(knowledgePoint)),
     difficulty: normalizeDifficulty(value.difficulty),
     tags: normalizeStringArray(value.tags, [knowledgePoint]),
     subject: typeof value.subject === "string" && value.subject.trim() ? fixLatex(value.subject) : undefined,
@@ -451,13 +453,21 @@ async function parseQuizWithRepair(raw: string, sourceType: Quiz["sourceType"]) 
   }
 }
 
+const quizMathJsonRules = `Quiz JSON math rules:
+- Do not output naked LaTeX in question, options, answers, or explanations.
+- Every LaTeX expression must be wrapped in inline math, for example "$600\\,\\text{N}$" or "$F = ma$".
+- Prefer plain text for ordinary units: "600 N", "20 m/s", "0.5 m/s^2", "1200 kg".
+- Use LaTeX only for real formulas or complex expressions.
+- Never output bare \\text{}, \\frac{}, \\sqrt{}, ^, or _ content without $...$ wrapping.`;
+
 const quizFormatRules = `数学格式要求：
 1. 题干、解析和选项要像考试试卷，凡是可以用数学形式表达的内容都写成标准数学符号。
 2. ${mathOutputInstruction}
 3. options 数组中每个元素必须是独立字符串，不能拼接。
 4. options 不要带 A: / B: / C: / D: 前缀。
 5. 选项如果是数学表达式，必须包在 $...$ 中，且尽量只保留数学式。
-6. 正确示例：
+6. ${quizMathJsonRules}
+7. 正确示例：
 "options": ["$S_2=\\\\pi(e^2-e^{-2})$", "$S_2=\\\\frac{\\\\pi}{2}(e^2-e^{-2})$", "$S_2=2\\\\pi(e-e^{-1})$", "$S_2=\\\\pi(e-e^{-1})^2$"]`;
 
 export async function generateQuizFromImageWithQwen({
@@ -826,12 +836,14 @@ function fallbackWrongQuestionInsight(question: WrongQuestion): WrongQuestion {
   return {
     ...question,
     errorType: question.errorType || "审题错误",
-    question: fixLatex(question.question),
-    options: question.options ? fixLatexArray(question.options) : question.options,
-    explanation: fixLatex(question.explanation),
-    errorReason: question.errorReason ? fixLatex(question.errorReason) : "可能没有准确抓住题干条件、选项差异或关键步骤。",
+    question: normalizeQuizMathText(fixLatex(question.question)),
+    options: question.options ? question.options.map((option) => normalizeQuizMathText(fixLatex(option))) : question.options,
+    explanation: normalizeQuizMathText(fixLatex(question.explanation)),
+    errorReason: question.errorReason ? normalizeQuizMathText(fixLatex(question.errorReason)) : "可能没有准确抓住题干条件、选项差异或关键步骤。",
     improvementSuggestion:
-      question.improvementSuggestion ? fixLatex(question.improvementSuggestion) : `先复盘「${fixLatex(knowledgePoint)}」的定义和典型题型，再按步骤重做一遍。`,
+      question.improvementSuggestion
+        ? normalizeQuizMathText(fixLatex(question.improvementSuggestion))
+        : `先复盘「${normalizeQuizMathText(fixLatex(knowledgePoint))}」的定义和典型题型，再按步骤重做一遍。`,
     tags: normalizeStringArray(question.tags, [
       question.subject || "综合",
       knowledgePoint,

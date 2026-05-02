@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { BookOpenCheck, CalendarCheck, RotateCcw, Search, SlidersHorizontal, Sparkles, TrendingUp } from "lucide-react";
-import MarkdownRenderer from "@/components/MarkdownRenderer";
 import QuizCard from "@/components/QuizCard";
+import QuizMathText, { InlineQuizMathText } from "@/components/QuizMathText";
 import { translateTagLabel } from "@/lib/labels";
 import type { Quiz, QuizQuestion } from "@/types/quiz";
 
@@ -477,21 +477,21 @@ export default function WrongbookClient({ wrongs }: { wrongs: WrongbookItem[] })
                     </span>
                   </div>
 
-                  <MarkdownRenderer as="div" text={item.question} className="font-semibold leading-7 text-slate-950" />
+                  <QuizMathText as="div" text={item.question} className="font-semibold leading-7 text-slate-950" />
                 </Link>
 
-                <MarkdownRenderer as="div" text={item.explanation} className="mt-3 text-sm leading-6 text-slate-600" />
+                <QuizMathText as="div" text={item.explanation} className="mt-3 text-sm leading-6 text-slate-600" />
 
                 <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
                   <div>
                     <span className="font-semibold text-rose-700">错因：</span>
-                    <MarkdownRenderer as="span" text={oneLineReason(item)} className="ml-1" />
+                    <InlineQuizMathText text={oneLineReason(item)} className="ml-1" />
                   </div>
 
                   {item.improvement_suggestion ? (
                     <div>
                       <span className="font-semibold text-blue-700">建议：</span>
-                      <MarkdownRenderer as="span" text={item.improvement_suggestion.slice(0, 36)} className="ml-1" />
+                      <InlineQuizMathText text={item.improvement_suggestion.slice(0, 36)} className="ml-1" />
                     </div>
                   ) : null}
                 </div>

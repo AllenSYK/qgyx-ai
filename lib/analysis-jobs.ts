@@ -8,6 +8,7 @@ import type {
 } from "@/lib/ai/schema";
 import { markdownFromOriginalExplanation } from "@/lib/ai/originalExplanationFromMarkdown";
 import { normalizeLanguage, type AppLanguage } from "@/lib/language";
+import { normalizeQuizMathText } from "@/lib/quiz-math";
 import type { AnalysisResult, Quiz, QuizQuestion } from "@/types/quiz";
 
 export type AnalysisJobStatus =
@@ -87,12 +88,12 @@ export function quizResultToLegacyQuizForLanguage(
   const outputLanguage = normalizeLanguage(language);
   const questions: QuizQuestion[] = quizResult.questions.map((question) => ({
     id: question.id,
-    question: question.question,
-    options: question.options,
+    question: normalizeQuizMathText(question.question),
+    options: question.options.map((option) => normalizeQuizMathText(option)),
     answerIndex: answerLetterToIndex(question.correctAnswer),
     correctAnswer: question.correctAnswer,
     explanation: "",
-    knowledgePoint: question.topic,
+    knowledgePoint: normalizeQuizMathText(question.topic),
     difficulty: question.difficulty,
     subject: original?.subject,
     tags: [original?.subject, question.topic, question.difficulty].filter(Boolean) as string[]

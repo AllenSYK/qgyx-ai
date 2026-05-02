@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Crown, Plus, RefreshCw, Search, ShieldCheck, Trash2, UserRoundCog } from "lucide-react";
+import { InlineQuizMathText } from "@/components/QuizMathText";
 import type { AdminUserRow } from "@/types/quiz";
 
 type AdminMembershipLevel = "free" | "pro" | "max";
@@ -899,7 +900,9 @@ export default function AdminUsersTable() {
           {filteredWrong.slice(0, 40).map((record) => (
             <div key={record.id} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3 text-sm">
               <Link href={`/wrongbook/${record.id}`} prefetch className="min-w-0 flex-1 active:opacity-70">
-                <div className="truncate font-medium text-slate-950">{record.question || "错题"}</div>
+                <div className="truncate font-medium text-slate-950">
+                  <InlineQuizMathText text={record.question || "错题"} />
+                </div>
                 <div className="mt-1 text-xs text-slate-500">{emailMap.get(record.user_id || "")} · {record.knowledge_point || "未分类"} · {record.error_type || "未标注"}</div>
               </Link>
               <button type="button" onClick={() => void deleteAdminRecord(record.id, "wrong")} className="rounded-full p-2 text-slate-400 transition hover:bg-rose-50 hover:text-rose-600">

@@ -12,6 +12,13 @@ import { isUsableOriginalExplanation } from "@/lib/ai/originalExplanationQuality
 import { postQwenChatCompletion, QWEN_QUIZ_MODEL, readAssistantText, type ChatMessage } from "@/lib/ai/qwen";
 import { mathOutputInstruction, normalizeLanguage, type AppLanguage } from "@/lib/language";
 
+const QUIZ_MATH_JSON_RULES = `Quiz JSON math rules:
+- Do not output naked LaTeX in question or options.
+- Every LaTeX expression must be wrapped in inline math, for example "$600\\,\\text{N}$" or "$F = ma$".
+- Prefer plain text for ordinary units: "600 N", "20 m/s", "0.5 m/s^2", "1200 kg".
+- Use LaTeX only for real formulas or complex expressions.
+- Never output bare \\text{}, \\frac{}, \\sqrt{}, ^, or _ content without $...$ wrapping.`;
+
 export async function generateQuiz({
   detectedText,
   originalExplanation,
@@ -50,6 +57,7 @@ Do not output Thinking, Reasoning, Chain of Thought, internal analysis, self-che
 题干和选项要像考试试卷：凡是可以用数学形式表达的内容，都必须写成标准数学形式；不要写“x平方”“根号x”“π除以3”这类口语化数学。
 question 与 options 中的公式必须使用 KaTeX 可渲染 LaTeX；数学型选项尽量只写数学式，不要把 A/B/C/D 或解释拼进选项。
 ${mathOutputInstruction}
+${QUIZ_MATH_JSON_RULES}
 JSON 格式：
 ${QUIZ_JSON_SHAPE}`
     },

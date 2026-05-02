@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { assertUserNotBanned, getCurrentUser } from "@/lib/auth";
+import { normalizeQuizQuestionsMath, normalizeWrongQuestionsMath } from "@/lib/quiz-math";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { QuizProgressPayload } from "@/types/quiz";
 
@@ -31,6 +32,8 @@ export async function POST(request: Request) {
 
     const admin = createSupabaseAdminClient();
     const correctCount = Math.max(0, Math.min(body.correctCount || 0, body.questionCount || 0));
+    const questions = normalizeQuizQuestionsMath(body.questions || []);
+    const wrongQuestions = normalizeWrongQuestionsMath(body.wrongQuestions || []);
 
     const { error } = await admin.from("quiz_records").upsert(
       {
@@ -39,10 +42,10 @@ export async function POST(request: Request) {
         analysis_record_id: body.analysisRecordId || null,
         quiz_title: body.quizTitle,
         mode: body.mode || "quiz",
-        questions: body.questions || [],
+        questions,
         answers: body.answers || {},
         score: body.score ?? correctCount,
-        wrong_questions: body.wrongQuestions || [],
+        wrong_questions: wrongQuestions,
         current_index: body.currentIndex ?? 0,
         is_completed: body.isCompleted ?? false
       },

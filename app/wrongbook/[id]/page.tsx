@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, BookOpenCheck } from "lucide-react";
-import MathText from "@/components/MathText";
 import MobileBottomNav from "@/components/MobileBottomNav";
+import QuizMathText, { InlineQuizMathText } from "@/components/QuizMathText";
 import { getCurrentUser, getProfile } from "@/lib/auth";
 import { translateTagLabel } from "@/lib/labels";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -90,29 +90,40 @@ export default async function WrongDetailPage({ params }: { params: Promise<{ id
 
         <div className="mt-6 rounded-3xl border border-slate-200 bg-slate-50 p-5">
           <div className="mb-2 text-sm font-semibold text-slate-500">题目</div>
-          <MathText as="div" text={item.question} className="font-semibold leading-7 text-slate-950" />
+          <QuizMathText as="div" text={item.question} className="font-semibold leading-7 text-slate-950" />
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <div className="rounded-3xl border border-rose-100 bg-rose-50 p-4 text-sm text-rose-900">
             <div className="font-semibold">你的答案</div>
-            <MathText text={`${String.fromCharCode(65 + item.user_answer_index)}. ${item.options?.[item.user_answer_index] || ""}`} className="mt-2 block" />
+            <div className="mt-2">
+              <span>{String.fromCharCode(65 + item.user_answer_index)}. </span>
+              <InlineQuizMathText text={item.options?.[item.user_answer_index] || ""} />
+            </div>
           </div>
           <div className="rounded-3xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-900">
             <div className="font-semibold">正确答案</div>
-            <MathText text={`${String.fromCharCode(65 + item.answer_index)}. ${item.options?.[item.answer_index] || ""}`} className="mt-2 block" />
+            <div className="mt-2">
+              <span>{String.fromCharCode(65 + item.answer_index)}. </span>
+              <InlineQuizMathText text={item.options?.[item.answer_index] || ""} />
+            </div>
           </div>
         </div>
 
         <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-4">
           <div className="mb-2 text-sm font-semibold text-slate-500">详细解析</div>
-          <MathText as="div" text={item.explanation || "暂无解析"} className="leading-7 text-slate-700" />
+          <QuizMathText as="div" text={item.explanation || "暂无解析"} className="leading-7 text-slate-700" />
         </div>
 
         <div className="mt-4 rounded-3xl border border-rose-100 bg-rose-50 p-4 text-sm leading-6 text-rose-900">
           <div className="font-semibold">错因分析</div>
-          <p className="mt-2">{item.error_reason || "暂无错因分析"}</p>
-          {item.improvement_suggestion ? <p className="mt-2">建议：{item.improvement_suggestion}</p> : null}
+          <QuizMathText as="div" text={item.error_reason || "暂无错因分析"} className="mt-2" />
+          {item.improvement_suggestion ? (
+            <div className="mt-2">
+              <span>建议：</span>
+              <InlineQuizMathText text={item.improvement_suggestion} />
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
