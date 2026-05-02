@@ -1,5 +1,5 @@
 ﻿const LATEX_COMMANDS =
-  "frac|dfrac|tfrac|sqrt|left|right|cdot|times|quad|qquad|Rightarrow|Leftarrow|rightarrow|leftarrow|le|ge|neq|approx|sin|cos|tan|arcsin|arccos|arctan|ln|log|pi|theta|alpha|beta|gamma|Delta|delta|lambda|mu|rho|sigma|omega|vec|mathbf|overline|boxed|angle|triangle|int|sum|lim|text";
+  "frac|dfrac|tfrac|cfrac|sqrt|left|right|cdot|times|div|quad|qquad|Rightarrow|Leftarrow|rightarrow|leftarrow|leftrightarrow|le|leq|ge|geq|neq|ne|approx|sim|cong|equiv|propto|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|coth|ln|log|exp|lim|inf|sup|max|min|det|dim|mod|gcd|lcm|pi|theta|alpha|beta|gamma|Delta|delta|lambda|mu|rho|sigma|omega|epsilon|varepsilon|zeta|eta|iota|kappa|nu|xi|omicron|tau|upsilon|phi|varphi|chi|psi|Omega|Theta|Lambda|Sigma|Phi|Psi|Pi|vec|mathbf|mathrm|mathbb|mathcal|mathfrak|overline|underline|hat|bar|tilde|dot|ddot|widehat|widetilde|overrightarrow|overleftarrow|overbrace|underbrace|boxed|cancel|color|text|textbf|textit|mbox|phantom|smash|mathop|mathrel|operatorname|stackrel|overset|underset|binom|dbinom|tbinom|angle|triangle|measuredangle|sphericalangle|int|iint|iiint|oint|sum|prod|coprod|bigcup|bigcap|bigoplus|bigotimes|bigsqcup|bigvee|bigwedge|nabla|partial|infty|emptyset|varnothing|forall|exists|nexists|in|notin|ni|subset|subseteq|supset|supseteq|cup|cap|setminus|mid|parallel|perp|neg|land|lor|oplus|otimes|bullet|star|circ|cdot|ldots|cdots|vdots|ddots|pm|mp|times|div|ast|dagger|ddagger|flat|natural|sharp|clubsuit|diamondsuit|heartsuit|spadesuit|langle|rangle|lfloor|rfloor|lceil|rceil|lbrace|rbrace|vert|Vert|backslash|nmid|nparallel|nsubseteq|nsupseteq|nsubset|nsupset|sqsubset|sqsupset|sqsubseteq|sqsupseteq|prec|succ|preceq|succeq|ll|gg|not|iff|implies|impliedby|mapsto|to|hookrightarrow|hookleftarrow|rightleftharpoons|leftrightarrows|uparrow|downarrow|updownarrow|Uparrow|Downarrow|Updownarrow|nearrow|searrow|nwarrow|swarrow|leadsto|dashv|vdash|models|top|bot|angle|surd|triangle|diamond|bigtriangleup|bigtriangledown|triangleleft|triangleright|lhd|rhd|unlhd|unrhd|bigcirc|circle|ellipse|arc";
 
 const PROSE_WORDS = [
   "where",
@@ -32,28 +32,210 @@ type Segment = {
   math: boolean;
 };
 
+const UNICODE_MATH_MAP: Record<string, string> = {
+  "²": "^{2}",
+  "³": "^{3}",
+  "¹": "^{1}",
+  "⁰": "^{0}",
+  "⁴": "^{4}",
+  "⁵": "^{5}",
+  "⁶": "^{6}",
+  "⁷": "^{7}",
+  "⁸": "^{8}",
+  "⁹": "^{9}",
+  "⁺": "^{+}",
+  "⁻": "^{-}",
+  "ⁿ": "^{n}",
+  "₀": "_{0}",
+  "₁": "_{1}",
+  "₂": "_{2}",
+  "₃": "_{3}",
+  "₄": "_{4}",
+  "₅": "_{5}",
+  "₆": "_{6}",
+  "₇": "_{7}",
+  "₈": "_{8}",
+  "₉": "_{9}",
+  "₊": "_{+}",
+  "₋": "_{-}",
+  "√": "\\sqrt",
+  "∛": "\\sqrt[3]",
+  "∞": "\\infty",
+  "π": "\\pi",
+  "θ": "\\theta",
+  "α": "\\alpha",
+  "β": "\\beta",
+  "γ": "\\gamma",
+  "δ": "\\delta",
+  "ε": "\\epsilon",
+  "ζ": "\\zeta",
+  "η": "\\eta",
+  "λ": "\\lambda",
+  "μ": "\\mu",
+  "ν": "\\nu",
+  "ξ": "\\xi",
+  "ρ": "\\rho",
+  "σ": "\\sigma",
+  "τ": "\\tau",
+  "φ": "\\phi",
+  "χ": "\\chi",
+  "ψ": "\\psi",
+  "ω": "\\omega",
+  "Δ": "\\Delta",
+  "Θ": "\\Theta",
+  "Λ": "\\Lambda",
+  "Σ": "\\Sigma",
+  "Φ": "\\Phi",
+  "Ψ": "\\Psi",
+  "Ω": "\\Omega",
+  "×": "\\times",
+  "÷": "\\div",
+  "±": "\\pm",
+  "∓": "\\mp",
+  "·": "\\cdot",
+  "≤": "\\leq",
+  "≥": "\\geq",
+  "≠": "\\neq",
+  "≈": "\\approx",
+  "≡": "\\equiv",
+  "∼": "\\sim",
+  "∝": "\\propto",
+  "←": "\\leftarrow",
+  "→": "\\rightarrow",
+  "↔": "\\leftrightarrow",
+  "⇐": "\\Leftarrow",
+  "⇒": "\\Rightarrow",
+  "⇔": "\\Leftrightarrow",
+  "↑": "\\uparrow",
+  "↓": "\\downarrow",
+  "∈": "\\in",
+  "∉": "\\notin",
+  "∋": "\\ni",
+  "⊂": "\\subset",
+  "⊃": "\\supset",
+  "⊆": "\\subseteq",
+  "⊇": "\\supseteq",
+  "∪": "\\cup",
+  "∩": "\\cap",
+  "∅": "\\emptyset",
+  "∀": "\\forall",
+  "∃": "\\exists",
+  "¬": "\\neg",
+  "∧": "\\land",
+  "∨": "\\lor",
+  "⊕": "\\oplus",
+  "⊗": "\\otimes",
+  "⊥": "\\perp",
+  "∥": "\\parallel",
+  "∠": "\\angle",
+  "∇": "\\nabla",
+  "∂": "\\partial",
+  "∑": "\\sum",
+  "∏": "\\prod",
+  "∫": "\\int",
+  "∮": "\\oint",
+  "⟨": "\\langle",
+  "⟩": "\\rangle",
+  "⌊": "\\lfloor",
+  "⌋": "\\rfloor",
+  "⌈": "\\lceil",
+  "⌉": "\\rceil",
+  "…": "\\ldots",
+  "⋯": "\\cdots",
+  "⋮": "\\vdots",
+  "⋱": "\\ddots",
+  "†": "\\dagger",
+  "‡": "\\ddagger",
+  "⋆": "\\star",
+  "∘": "\\circ",
+  "⊕": "\\oplus",
+  "⊖": "\\ominus",
+  "⊘": "\\oslash",
+  "⊙": "\\odot",
+  "ℵ": "\\aleph"
+};
+
+function convertUnicodeMath(input: string): string {
+  let result = input;
+
+  // Handle Unicode superscript sequences (e.g., x² → x^{2}, x²³ → x^{23})
+  result = result.replace(/([A-Za-z0-9)}\]])([²³¹⁰⁴⁵⁶⁷⁸⁹⁺⁻ⁿ]+)/g, (_match, base, supers) => {
+    const converted = Array.from(supers)
+      .map((ch: string) => {
+        const mapped = UNICODE_MATH_MAP[ch];
+        return mapped ? mapped.replace(/[\^{}]/g, "") : ch;
+      })
+      .join("");
+    return `${base}^{${converted}}`;
+  });
+
+  // Handle Unicode subscript sequences (e.g., x₁ → x_{1})
+  result = result.replace(/([A-Za-z0-9)}\]])([₀₁₂₃₄₅₆₇₈₉₊₋]+)/g, (_match, base, subs) => {
+    const converted = Array.from(subs)
+      .map((ch: string) => {
+        const mapped = UNICODE_MATH_MAP[ch];
+        return mapped ? mapped.replace(/[_{}]/g, "") : ch;
+      })
+      .join("");
+    return `${base}_{${converted}}`;
+  });
+
+  // Handle √ with following number/variable (e.g., √2 → \sqrt{2}, √(x+1) → \sqrt{x+1})
+  result = result.replace(/√\s*\(([^)]+)\)/g, "\\sqrt{$1}");
+  result = result.replace(/√\s*([A-Za-z0-9π]+)/g, "\\sqrt{$1}");
+
+  // Replace remaining Unicode math symbols with LaTeX equivalents
+  for (const [unicode, latex] of Object.entries(UNICODE_MATH_MAP)) {
+    // Skip superscript/subscript digits (already handled above)
+    if (/^[²³¹⁰⁴⁵⁶⁷⁸⁹⁺⁻ⁿ₀₁₂₃₄₅₆₇₈₉₊₋]$/.test(unicode)) continue;
+    // Skip √ (already handled above)
+    if (unicode === "√") continue;
+
+    if (result.includes(unicode)) {
+      result = result.split(unicode).join(latex);
+    }
+  }
+
+  return result;
+}
+
 function repairBrokenSyntax(input: string) {
-  return String(input || "")
-    .replace(/\r\n/g, "\n")
+  let result = String(input || "")
+    .replace(/\r\n/g, "\n");
+
+  // Step 1: Convert Unicode math symbols to LaTeX BEFORE delimiter processing
+  result = convertUnicodeMath(result);
+
+  // Step 2: Normalize delimiters — convert \( \) to $ and \[ \] to $$
+  result = result
     .replace(/\\\(/g, "$")
     .replace(/\\\)/g, "$")
     .replace(/\\\[/g, "$$")
     .replace(/\\\]/g, "$$")
     .replace(/\\\$/g, "$")
-    .replace(/\${3,}/g, "$$")
+    .replace(/\${3,}/g, "$$");
+
+  // Step 3: Fix LaTeX command issues
+  result = result
     .replace(/\\dfrac/g, "\\frac")
     .replace(/\\tfrac/g, "\\frac")
+    .replace(/\\cfrac/g, "\\frac")
     .replace(/\\frac\s*\$+\s*/g, "\\frac")
     .replace(/\\sqrt\s*\$+\s*/g, "\\sqrt")
     .replace(/\\boxed\s*\$+\s*/g, "\\boxed")
     .replace(/\\text\s*\$+\s*/g, "\\text")
     .replace(/\\frac\s*\{([^{}\n]+)\}\s*\$+\s*\{([^{}\n]+)\}/g, "\\frac{$1}{$2}")
     .replace(/\\sqrt\s*\{([^{}\n]+)\}\s*\$+/g, "\\sqrt{$1}")
-    .replace(/\$+(?=\})/g, "")
+    .replace(/\$+(?=\})/g, "");
+
+  // Step 4: Clean up delimiter issues — only remove $ before punctuation, NOT before other $
+  result = result
     .replace(/\$+\s*([,，。；;:：)）])/g, "$1")
     .replace(/([（(])\s*\$+/g, "$1")
-    .replace(/^\s*\${1,2}\s*$/gm, "")
-    .replace(/\$+\s*\$+/g, "$$")
+    .replace(/^\s*\${1,2}\s*$/gm, "");
+
+  // Step 5: Convert common non-LaTeX math patterns
+  result = result
     .replace(/\bsqrt\s*\(([^()\n]{1,80})\)/gi, "\\sqrt{$1}")
     .replace(/\bdy\s*\/\s*dx\b/g, "\\frac{dy}{dx}")
     .replace(/\bdx\s*\/\s*d\\theta\b/g, "\\frac{dx}{d\\theta}")
@@ -62,6 +244,8 @@ function repairBrokenSyntax(input: string) {
     .replace(/\bdy\s*\/\s*dtheta\b/g, "\\frac{dy}{d\\theta}")
     .replace(/\\frac\{(\w)\}\{(\w)\}\s*\\frac\{(\w)\}\{(\w)\}/g, "\\frac{$1}{$2}\\frac{$3}{$4}")
     .trim();
+
+  return result;
 }
 
 function fixUnclosedFrac(input: string): string {
@@ -290,7 +474,10 @@ function wrapBareMathInText(input: string) {
   next = next.replace(/\bdy\s*\/\s*d\\theta\b/g, () => wrapMath("\\frac{dy}{d\\theta}"));
 
   next = next.replace(
-    /(\\(?:sin|cos|tan|theta|pi|Rightarrow|cdot|times|quad)\b(?:\^\{?[A-Za-z0-9+\-]+\}?|[A-Za-z0-9\\{}^_\s+\-*/=().]){0,80})/g,
+    new RegExp(
+      `(\\\\(?:sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|theta|pi|alpha|beta|gamma|delta|epsilon|lambda|mu|rho|sigma|omega|phi|psi|Rightarrow|Leftarrow|rightarrow|leftarrow|cdot|times|div|quad|qquad|leq|geq|neq|approx|equiv|sim|infty|nabla|partial|sum|prod|int|lim|ln|log|exp|max|min|sup|inf|forall|exists|in|notin|subset|subseteq|cup|cap|perp|parallel|angle|triangle|neg|land|lor|oplus|otimes)\\b(?:\\^\\{?[A-Za-z0-9+\\-]+\\}?|[A-Za-z0-9\\\\{}^_\\s+\\-*/=().]){0,80})`,
+      "g"
+    ),
     (match) => wrapMath(match)
   );
 
@@ -309,6 +496,15 @@ function wrapBareMathInText(input: string) {
     (_match, prefix: string, formula: string) => `${prefix}${wrapMath(formula)}`
   );
 
+  // Catch-all: wrap any remaining bare LaTeX commands that weren't caught above
+  next = next.replace(
+    new RegExp(
+      `(\\\\(?:${LATEX_COMMANDS})(?:\\{[^{}]*\\}){0,3}(?:\\s*\\{[^{}]*\\}){0,2}(?:\\^\\{?[^{}\\s]+\\}?|_\\{?[^{}\\s]+\\}?)*)`,
+      "g"
+    ),
+    (match) => wrapMath(match)
+  );
+
   return next;
 }
 
@@ -320,8 +516,10 @@ function normalizeMathBlocks(value: string) {
     .replace(/([A-Za-z0-9}\)])\$\$(?=[,，。；;:：])/g, "$1")
     .replace(/([A-Za-z0-9}\)])\$\$(?=\s*$)/gm, "$1")
     .replace(/^\s*\${1,2}\s*$/gm, "")
-    .replace(/\$\s+\$/g, "")
     .trim();
+
+  // Fix empty math blocks: $ $ → remove
+  result = result.replace(/\$\s+\$/g, "");
 
   result = fixUnclosedFrac(result);
   result = fixExponentSpacing(result);
