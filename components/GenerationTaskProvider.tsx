@@ -482,7 +482,7 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
         },
         previewUrl,
         progress: 6,
-        step: "正在准备上传",
+        step: "正在识别题目...",
         createdAt: new Date().toISOString()
       };
 
@@ -549,7 +549,7 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
       try {
         updateTaskById(taskId, {
           progress: 25,
-          step: kind === "image" ? "正在读取题目..." : "正在识别题目"
+          step: kind === "image" ? "正在识别题目..." : "正在识别题目"
         });
 
         if (kind === "image") {
@@ -576,6 +576,35 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
           const reader = response.body.getReader();
           const decoder = new TextDecoder();
           let buffer = "";
+          let markdown = "";
+          let pending = "";
+          let lastFlush = 0;
+
+          const flushMarkdown = (force = false) => {
+            const now = Date.now();
+
+            if (!force && now - lastFlush < 100) return;
+            if (!pending) return;
+
+            markdown += pending;
+            pending = "";
+            lastFlush = now;
+
+            setTasks((current) =>
+              current.map((taskItem) =>
+                taskItem.id === taskId
+                  ? {
+                      ...taskItem,
+                      status: "running",
+                      jobStatus: "generating_explanation",
+                      progress: Math.max(taskItem.progress, 55),
+                      step: "正在生成解析...",
+                      analysisText: markdown
+                    }
+                  : taskItem
+              )
+            );
+          };
 
           while (true) {
             const { done, value } = await reader.read();
@@ -589,31 +618,25 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
             buffer = parsed.buffer;
 
             for (const item of parsed.events) {
-              if (item.event === "delta") {
-                const text = typeof item.data.text === "string" ? item.data.text : "";
+              if (item.event === "delta" || item.event === "message") {
+                const text =
+                  typeof item.data.delta === "string"
+                    ? item.data.delta
+                    : typeof item.data.text === "string"
+                      ? item.data.text
+                      : "";
 
                 if (!text) {
                   continue;
                 }
 
-                setTasks((current) =>
-                  current.map((taskItem) =>
-                    taskItem.id === taskId
-                      ? {
-                          ...taskItem,
-                          status: "running",
-                          jobStatus: "generating_explanation",
-                          progress: typeof item.data.progress === "number" ? item.data.progress : Math.max(taskItem.progress, 55),
-                          step: typeof item.data.stage === "string" ? item.data.stage : "正在生成解析...",
-                          analysisText: taskItem.analysisText
-                        }
-                      : taskItem
-                  )
-                );
+                pending += text;
+                flushMarkdown(false);
                 continue;
               }
 
               if (item.event === "error") {
+                flushMarkdown(true);
                 setTasks((current) =>
                   current.map((taskItem) =>
                     taskItem.id === taskId
@@ -639,6 +662,7 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
               }
 
               if (item.event === "meta" || item.event === "done") {
+                flushMarkdown(true);
                 setTasks((current) =>
                   current.map((taskItem) =>
                     taskItem.id === taskId
@@ -650,6 +674,7 @@ export function GenerationTaskProvider({ children }: { children: React.ReactNode
             }
           }
 
+          flushMarkdown(true);
           return;
         }
 
