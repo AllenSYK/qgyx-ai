@@ -234,6 +234,10 @@ export function cleanAiLatex(raw: unknown): string {
   return safeRenderMathText(raw);
 }
 
+export function fixLatex(raw: unknown): string {
+  return safeRenderMathText(raw);
+}
+
 export function repairLatex(raw: unknown): string {
   return safeRenderMathText(raw);
 }
