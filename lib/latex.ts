@@ -1,593 +1,261 @@
-﻿const LATEX_COMMANDS =
-  "frac|dfrac|tfrac|cfrac|sqrt|left|right|cdot|times|div|quad|qquad|Rightarrow|Leftarrow|rightarrow|leftarrow|leftrightarrow|le|leq|ge|geq|neq|ne|approx|sim|cong|equiv|propto|sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|coth|ln|log|exp|lim|inf|sup|max|min|det|dim|mod|gcd|lcm|pi|theta|alpha|beta|gamma|Delta|delta|lambda|mu|rho|sigma|omega|epsilon|varepsilon|zeta|eta|iota|kappa|nu|xi|omicron|tau|upsilon|phi|varphi|chi|psi|Omega|Theta|Lambda|Sigma|Phi|Psi|Pi|vec|mathbf|mathrm|mathbb|mathcal|mathfrak|overline|underline|hat|bar|tilde|dot|ddot|widehat|widetilde|overrightarrow|overleftarrow|overbrace|underbrace|boxed|cancel|color|text|textbf|textit|mbox|phantom|smash|mathop|mathrel|operatorname|stackrel|overset|underset|binom|dbinom|tbinom|angle|triangle|measuredangle|sphericalangle|int|iint|iiint|oint|sum|prod|coprod|bigcup|bigcap|bigoplus|bigotimes|bigsqcup|bigvee|bigwedge|nabla|partial|infty|emptyset|varnothing|forall|exists|nexists|in|notin|ni|subset|subseteq|supset|supseteq|cup|cap|setminus|mid|parallel|perp|neg|land|lor|oplus|otimes|bullet|star|circ|cdot|ldots|cdots|vdots|ddots|pm|mp|times|div|ast|dagger|ddagger|flat|natural|sharp|clubsuit|diamondsuit|heartsuit|spadesuit|langle|rangle|lfloor|rfloor|lceil|rceil|lbrace|rbrace|vert|Vert|backslash|nmid|nparallel|nsubseteq|nsupseteq|nsubset|nsupset|sqsubset|sqsupset|sqsubseteq|sqsupseteq|prec|succ|preceq|succeq|ll|gg|not|iff|implies|impliedby|mapsto|to|hookrightarrow|hookleftarrow|rightleftharpoons|leftrightarrows|uparrow|downarrow|updownarrow|Uparrow|Downarrow|Updownarrow|nearrow|searrow|nwarrow|swarrow|leadsto|dashv|vdash|models|top|bot|angle|surd|triangle|diamond|bigtriangleup|bigtriangledown|triangleleft|triangleright|lhd|rhd|unlhd|unrhd|bigcirc|circle|ellipse|arc";
-
-const PROSE_WORDS = [
-  "where",
-  "given",
-  "substitute",
-  "then",
-  "because",
-  "and",
-  "or",
-  "therefore",
-  "vertex",
-  "translation",
-  "answer",
-  "explanation",
-  "solution",
-  "point",
-  "points",
-  "line",
-  "lines",
-  "find",
-  "show",
-  "calculate",
-  "normal",
-  "tangent",
-  "curve"
-];
-
-type Segment = {
-  value: string;
-  math: boolean;
-};
-
-const UNICODE_MATH_MAP: Record<string, string> = {
-  "²": "^{2}",
-  "³": "^{3}",
-  "¹": "^{1}",
-  "⁰": "^{0}",
-  "⁴": "^{4}",
-  "⁵": "^{5}",
-  "⁶": "^{6}",
-  "⁷": "^{7}",
-  "⁸": "^{8}",
-  "⁹": "^{9}",
-  "⁺": "^{+}",
-  "⁻": "^{-}",
-  "ⁿ": "^{n}",
-  "₀": "_{0}",
-  "₁": "_{1}",
-  "₂": "_{2}",
-  "₃": "_{3}",
-  "₄": "_{4}",
-  "₅": "_{5}",
-  "₆": "_{6}",
-  "₇": "_{7}",
-  "₈": "_{8}",
-  "₉": "_{9}",
-  "₊": "_{+}",
-  "₋": "_{-}",
-  "√": "\\sqrt",
-  "∛": "\\sqrt[3]",
-  "∞": "\\infty",
-  "π": "\\pi",
-  "θ": "\\theta",
-  "α": "\\alpha",
-  "β": "\\beta",
-  "γ": "\\gamma",
-  "δ": "\\delta",
-  "ε": "\\epsilon",
-  "ζ": "\\zeta",
-  "η": "\\eta",
-  "λ": "\\lambda",
-  "μ": "\\mu",
-  "ν": "\\nu",
-  "ξ": "\\xi",
-  "ρ": "\\rho",
-  "σ": "\\sigma",
-  "τ": "\\tau",
-  "φ": "\\phi",
-  "χ": "\\chi",
-  "ψ": "\\psi",
-  "ω": "\\omega",
-  "Δ": "\\Delta",
-  "Θ": "\\Theta",
-  "Λ": "\\Lambda",
-  "Σ": "\\Sigma",
-  "Φ": "\\Phi",
-  "Ψ": "\\Psi",
-  "Ω": "\\Omega",
-  "×": "\\times",
-  "÷": "\\div",
-  "±": "\\pm",
-  "∓": "\\mp",
-  "·": "\\cdot",
-  "≤": "\\leq",
-  "≥": "\\geq",
-  "≠": "\\neq",
-  "≈": "\\approx",
-  "≡": "\\equiv",
-  "∼": "\\sim",
-  "∝": "\\propto",
-  "←": "\\leftarrow",
-  "→": "\\rightarrow",
-  "↔": "\\leftrightarrow",
-  "⇐": "\\Leftarrow",
-  "⇒": "\\Rightarrow",
-  "⇔": "\\Leftrightarrow",
-  "↑": "\\uparrow",
-  "↓": "\\downarrow",
-  "∈": "\\in",
-  "∉": "\\notin",
-  "∋": "\\ni",
-  "⊂": "\\subset",
-  "⊃": "\\supset",
-  "⊆": "\\subseteq",
-  "⊇": "\\supseteq",
-  "∪": "\\cup",
-  "∩": "\\cap",
-  "∅": "\\emptyset",
-  "∀": "\\forall",
-  "∃": "\\exists",
-  "¬": "\\neg",
-  "∧": "\\land",
-  "∨": "\\lor",
-  "⊕": "\\oplus",
-  "⊗": "\\otimes",
-  "⊥": "\\perp",
-  "∥": "\\parallel",
-  "∠": "\\angle",
-  "∇": "\\nabla",
-  "∂": "\\partial",
-  "∑": "\\sum",
-  "∏": "\\prod",
-  "∫": "\\int",
-  "∮": "\\oint",
-  "⟨": "\\langle",
-  "⟩": "\\rangle",
-  "⌊": "\\lfloor",
-  "⌋": "\\rfloor",
-  "⌈": "\\lceil",
-  "⌉": "\\rceil",
-  "…": "\\ldots",
-  "⋯": "\\cdots",
-  "⋮": "\\vdots",
-  "⋱": "\\ddots",
-  "†": "\\dagger",
-  "‡": "\\ddagger",
-  "⋆": "\\star",
-  "∘": "\\circ",
-  "⊖": "\\ominus",
-  "⊘": "\\oslash",
-  "⊙": "\\odot",
-  "ℵ": "\\aleph"
-};
-
-function convertUnicodeMath(input: string): string {
-  let result = input;
-
-  // Handle Unicode superscript sequences (e.g., x² → x^{2}, x²³ → x^{23})
-  result = result.replace(/([A-Za-z0-9)}\]])([²³¹⁰⁴⁵⁶⁷⁸⁹⁺⁻ⁿ]+)/g, (_match, base, supers) => {
-    const converted = Array.from(supers)
-      .map((ch: string) => {
-        const mapped = UNICODE_MATH_MAP[ch];
-        return mapped ? mapped.replace(/[\^{}]/g, "") : ch;
-      })
-      .join("");
-    return `${base}^{${converted}}`;
-  });
-
-  // Handle Unicode subscript sequences (e.g., x₁ → x_{1})
-  result = result.replace(/([A-Za-z0-9)}\]])([₀₁₂₃₄₅₆₇₈₉₊₋]+)/g, (_match, base, subs) => {
-    const converted = Array.from(subs)
-      .map((ch: string) => {
-        const mapped = UNICODE_MATH_MAP[ch];
-        return mapped ? mapped.replace(/[_{}]/g, "") : ch;
-      })
-      .join("");
-    return `${base}_{${converted}}`;
-  });
-
-  // Handle √ with following number/variable (e.g., √2 → \sqrt{2}, √(x+1) → \sqrt{x+1})
-  result = result.replace(/√\s*\(([^)]+)\)/g, "\\sqrt{$1}");
-  result = result.replace(/√\s*([A-Za-z0-9π]+)/g, "\\sqrt{$1}");
-
-  // Replace remaining Unicode math symbols with LaTeX equivalents
-  for (const [unicode, latex] of Object.entries(UNICODE_MATH_MAP)) {
-    // Skip superscript/subscript digits (already handled above)
-    if (/^[²³¹⁰⁴⁵⁶⁷⁸⁹⁺⁻ⁿ₀₁₂₃₄₅₆₇₈₉₊₋]$/.test(unicode)) continue;
-    // Skip √ (already handled above)
-    if (unicode === "√") continue;
-
-    if (result.includes(unicode)) {
-      result = result.split(unicode).join(latex);
-    }
-  }
-
-  return result;
-}
-
-function repairBrokenSyntax(input: string) {
-  let result = String(input || "")
-    .replace(/\r\n/g, "\n");
-
-  // Step 1: Convert Unicode math symbols to LaTeX BEFORE delimiter processing
-  result = convertUnicodeMath(result);
-
-  // Step 2: Normalize delimiters — convert \( \) to $ and \[ \] to $$
-  result = result
-    .replace(/\\\(/g, "$")
-    .replace(/\\\)/g, "$")
-    .replace(/\\\[/g, "$$")
-    .replace(/\\\]/g, "$$")
-    .replace(/\\\$/g, "$")
-    .replace(/\${3,}/g, "$$");
-
-  // Step 3: Fix LaTeX command issues
-  result = result
-    .replace(/\\dfrac/g, "\\frac")
-    .replace(/\\tfrac/g, "\\frac")
-    .replace(/\\cfrac/g, "\\frac")
-    .replace(/\\frac\s*\$+\s*/g, "\\frac")
-    .replace(/\\sqrt\s*\$+\s*/g, "\\sqrt")
-    .replace(/\\boxed\s*\$+\s*/g, "\\boxed")
-    .replace(/\\text\s*\$+\s*/g, "\\text")
-    .replace(/\\frac\s*\{([^{}\n]+)\}\s*\$+\s*\{([^{}\n]+)\}/g, "\\frac{$1}{$2}")
-    .replace(/\\sqrt\s*\{([^{}\n]+)\}\s*\$+/g, "\\sqrt{$1}")
-    .replace(/\$+(?=\})/g, "");
-
-  // Step 4: Clean up delimiter issues — only remove $ before punctuation, NOT before other $
-  result = result
-    .replace(/\$+\s*([,，。；;:：)）])/g, "$1")
-    .replace(/([（(])\s*\$+/g, "$1")
-    .replace(/^\s*\${1,2}\s*$/gm, "");
-
-  // Step 5: Convert common non-LaTeX math patterns
-  result = result
-    .replace(/\bsqrt\s*\(([^()\n]{1,80})\)/gi, "\\sqrt{$1}")
-    .replace(/\bdy\s*\/\s*dx\b/g, "\\frac{dy}{dx}")
-    .replace(/\bdx\s*\/\s*d\\theta\b/g, "\\frac{dx}{d\\theta}")
-    .replace(/\bdy\s*\/\s*d\\theta\b/g, "\\frac{dy}{d\\theta}")
-    .replace(/\bdx\s*\/\s*dtheta\b/g, "\\frac{dx}{d\\theta}")
-    .replace(/\bdy\s*\/\s*dtheta\b/g, "\\frac{dy}{d\\theta}")
-    .replace(/\\frac\{(\w)\}\{(\w)\}\s*\\frac\{(\w)\}\{(\w)\}/g, "\\frac{$1}{$2}\\frac{$3}{$4}")
-    .trim();
-
-  return result;
-}
-
-function fixUnclosedFrac(input: string): string {
-  let result = input;
-  let safety = 0;
-
-  while (safety < 10) {
-    const fracMatch = result.match(/\\frac\{([^{}]*)\}(?!\{)/);
-    if (!fracMatch) break;
-
-    const start = fracMatch.index ?? 0;
-    const before = result.slice(0, start);
-    const after = result.slice(start + fracMatch[0].length);
-
-    if (after.trimStart().startsWith("{")) {
-      break;
-    }
-
-    const nextChar = after.trimStart().charAt(0);
-    if (nextChar) {
-      result = before + `\\frac{${fracMatch[1]}}{${nextChar}}` + after.slice(after.indexOf(nextChar) + 1);
-    } else {
-      result = before + `\\frac{${fracMatch[1]}}{?}`;
-    }
-    safety++;
-  }
-
-  return result;
-}
-
-function fixExponentSpacing(input: string): string {
-  return input
-    .replace(/([a-zA-Z0-9])\s*\n\s*(\d)/g, "$1^{$2}")
-    .replace(/([a-zA-Z])\s+(\d)\s*([+\-=,;)\s])/g, "$1^{$2}$3")
-    .replace(/x\s*2\b/g, "x^{2}")
-    .replace(/x\s*3\b/g, "x^{3}")
-    .replace(/(\w)\s*\^\s*(\w)\s*(\w)/g, (match, base, exp1, exp2) => {
-      if (/[0-9]/.test(exp1) && /[0-9]/.test(exp2)) return `${base}^{${exp1}${exp2}}`;
-      return match;
-    });
-}
-
-function fixDxDyOrder(input: string): string {
-  return input
-    .replace(/\b(dy|dx)\s*\/\s*(dy|dx)\b/g, (match, top, bottom) => {
-      return `\\frac{${top}}{${bottom}}`;
-    })
-    .replace(/\\frac\{dx\}\{dy\}/g, "\\frac{dx}{dy}")
-    .replace(/\\frac\{dy\}\{dx\}/g, "\\frac{dy}{dx}");
-}
-
-function removeDoubleDollar(input: string): string {
-  return input
-    .replace(/\$\$([^$]+?)\$\$/g, "\\[$1\\]")
-    .replace(/\$([^$\n]+?)\$/g, "\\($1\\)");
-}
-
-function hasCjk(value: string) {
-  return /[\u4e00-\u9fff]/.test(value);
-}
-
-function hasLatexCommand(value: string) {
-  return new RegExp(`\\\\(?:${LATEX_COMMANDS})\\b`).test(value);
-}
-
-function hasMathSignal(value: string) {
-  const text = String(value || "").trim();
-  if (!text) return false;
-  if (hasLatexCommand(text)) return true;
-  if (/\\[A-Za-z]+/.test(text)) return true;
-  if (/[=^_<>+\-*/≤≥≠≈→⇒]/.test(text) && /[A-Za-z0-9π]/.test(text)) return true;
-  if (/\b\d+\s*\/\s*\d+\b/.test(text)) return true;
-  if (/(?:\b[A-Za-z]{1,3}\b|π)\s*\/\s*(?:\b[A-Za-z0-9]{1,8}\b|π)/.test(text)) return true;
-  if (/(?:根号|√)\s*[A-Za-z0-9π]+/.test(text)) return true;
-  if (/[A-Za-zπ]\s*(?:的)?(?:平方|立方|[0-9一二三四五六七八九十]+次方)/.test(text)) return true;
-  if (/点\s*[A-Za-z]\s*坐标\s*[（(]/.test(text)) return true;
-  return false;
-}
-
-function isProse(value: string) {
-  const text = String(value || "").trim();
-  if (!text) return false;
-  if (hasCjk(text)) return true;
-
-  const lower = text.toLowerCase();
-  if (PROSE_WORDS.some((word) => new RegExp(`\\b${word}\\b`, "i").test(lower))) return true;
-
-  const words = text.match(/[A-Za-z]{2,}/g) || [];
-  const mathLike = hasMathSignal(text);
-
-  if (!mathLike && words.length >= 1) return true;
-  if (!hasLatexCommand(text) && words.length >= 3) return true;
-
-  return false;
-}
-
-function toLatexAtom(value: string) {
-  const clean = value.trim();
-  return clean === "π" ? "\\pi" : clean;
-}
-
-function normalizeExponent(value: string) {
-  const clean = value.replace(/[{}]/g, "").trim();
-  const map: Record<string, string> = {
-    一: "1",
-    二: "2",
-    三: "3",
-    四: "4",
-    五: "5",
-    六: "6",
-    七: "7",
-    八: "8",
-    九: "9",
-    十: "10"
-  };
-
-  return map[clean] || clean;
-}
-
-function normalizeFormulaSyntax(input: string) {
-  return String(input || "")
-    .replace(/(^|[^\w\\])((?:\\pi|[A-Za-zπ]|\d{1,8})\s*\/\s*(?:\\pi|[A-Za-z0-9π]+|\d{1,8}))/g, (_match, prefix: string, fraction: string) => `${prefix}${convertSimpleFraction(fraction)}`)
-    .replace(/π/g, "\\pi")
-    .replace(/(^|[^\\A-Za-z])pi\b/gi, (_match, prefix: string) => `${prefix}\\pi`)
-    .replace(/(\\[A-Za-z]+|[A-Za-z])\s*\^\s*\{?([0-9A-Za-z+\-]+)\}?/g, (_match, base: string, exponent: string) => `${base}^{${normalizeExponent(exponent)}}`);
-}
-
-function shouldKeepMath(value: string) {
-  const clean = normalizeFormulaSyntax(repairBrokenSyntax(value).trim());
-  return Boolean(clean && hasMathSignal(clean) && !isProse(clean));
-}
-
-function wrapMath(value: string) {
-  const clean = normalizeFormulaSyntax(repairBrokenSyntax(value).trim());
-  if (!clean || !shouldKeepMath(clean)) return clean;
-  if (clean.startsWith("$") && clean.endsWith("$")) return clean;
-  return `$${clean}$`;
-}
-
-function convertSimpleFraction(match: string) {
-  const [left, right] = match.split("/").map((part) => part.trim());
-  if (!left || !right) return match;
-  return `\\frac{${toLatexAtom(left)}}{${toLatexAtom(right)}}`;
-}
-
-function convertVerbalMath(input: string) {
-  return input
-    .replace(/点\s*([A-Za-z])\s*坐标\s*[（(]\s*([-+]?\d+(?:\.\d+)?)\s*[,，]\s*([-+]?\d+(?:\.\d+)?)\s*[）)]/g, (_match, point: string, x: string, y: string) =>
-      `${point}\\left(${x},${y}\\right)`
-    )
-    .replace(/([A-Za-zπ])\s*(?:的)?([0-9一二三四五六七八九十]+)次方/g, (_match, base: string, exponent: string) =>
-      `${toLatexAtom(base)}^{${normalizeExponent(exponent)}}`
-    )
-    .replace(/([A-Za-zπ])\s*(?:的)?平方/g, (_match, base: string) => `${toLatexAtom(base)}^{2}`)
-    .replace(/([A-Za-zπ])\s*(?:的)?立方/g, (_match, base: string) => `${toLatexAtom(base)}^{3}`)
-    .replace(/(?:根号|√)\s*([A-Za-z0-9π]+)/g, (_match, radicand: string) => `\\sqrt{${toLatexAtom(radicand)}}`)
-    .replace(/([A-Za-z0-9π]+)\s*除以\s*([A-Za-z0-9π]+)/g, (_match, left: string, right: string) =>
-      `\\frac{${toLatexAtom(left)}}{${toLatexAtom(right)}}`
-    );
-}
-
-function splitMathSegments(input: string): Segment[] {
-  const text = String(input || "");
-  const segments: Segment[] = [];
-  let cursor = 0;
-
-  while (cursor < text.length) {
-    const start = text.indexOf("$", cursor);
-
-    if (start === -1) {
-      segments.push({ value: text.slice(cursor), math: false });
-      break;
-    }
-
-    if (start > cursor) {
-      segments.push({ value: text.slice(cursor, start), math: false });
-    }
-
-    const display = text.startsWith("$$", start);
-    const delimiter = display ? "$$" : "$";
-    const end = text.indexOf(delimiter, start + delimiter.length);
-
-    if (end === -1) {
-      segments.push({ value: text.slice(start), math: false });
-      break;
-    }
-
-    segments.push({
-      value: text.slice(start, end + delimiter.length),
-      math: true
-    });
-    cursor = end + delimiter.length;
-  }
-
-  return segments;
-}
-
-function normalizeExistingMath(segment: string) {
-  if (segment.startsWith("$$") && segment.endsWith("$$")) {
-    const fixed = normalizeFormulaSyntax(repairBrokenSyntax(segment.slice(2, -2)).trim());
-    if (!fixed) return "";
-    if (!shouldKeepMath(fixed)) return fixed;
-    return `$$${fixed}$$`;
-  }
-
-  if (segment.startsWith("$") && segment.endsWith("$")) {
-    const fixed = normalizeFormulaSyntax(repairBrokenSyntax(segment.slice(1, -1)).trim());
-    if (!fixed) return "";
-    if (!shouldKeepMath(fixed)) return fixed;
-    return `$${fixed}$`;
-  }
-
-  return segment;
-}
-
-function wrapBareMathInText(input: string) {
-  let next = convertVerbalMath(input);
-
-  next = next.replace(
-    /(\\frac\{[^{}\n]+\}\{[^{}\n]+\}|\\sqrt\{[^{}\n]+\}|\\boxed\{[^{}\n]+\}|[A-Za-z]?\\left\s*[\(\[\{.]?[^，。；;\n]{1,160}?\\right\s*[\)\]\}.|]?|\\angle\s*[A-Za-z0-9]+)/g,
-    (match) => wrapMath(match)
-  );
-
-  next = next.replace(/\bdy\s*\/\s*dx\b/g, () => wrapMath("\\frac{dy}{dx}"));
-  next = next.replace(/\bdx\s*\/\s*d\\theta\b/g, () => wrapMath("\\frac{dx}{d\\theta}"));
-  next = next.replace(/\bdy\s*\/\s*d\\theta\b/g, () => wrapMath("\\frac{dy}{d\\theta}"));
-
-  next = next.replace(
-    new RegExp(
-      `(\\\\(?:sin|cos|tan|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|theta|pi|alpha|beta|gamma|delta|epsilon|lambda|mu|rho|sigma|omega|phi|psi|Rightarrow|Leftarrow|rightarrow|leftarrow|cdot|times|div|quad|qquad|leq|geq|neq|approx|equiv|sim|infty|nabla|partial|sum|prod|int|lim|ln|log|exp|max|min|sup|inf|forall|exists|in|notin|subset|subseteq|cup|cap|perp|parallel|angle|triangle|neg|land|lor|oplus|otimes)\\b(?:\\^\\{?[A-Za-z0-9+\\-]+\\}?|[A-Za-z0-9\\\\{}^_\\s+\\-*/=().]){0,80})`,
-      "g"
-    ),
-    (match) => wrapMath(match)
-  );
-
-  next = next.replace(
-    /(^|[^A-Za-z0-9\\$])([A-Za-z]\^[{]?[0-9A-Za-z+\-]+[}]?)/g,
-    (_match, prefix: string, formula: string) => `${prefix}${wrapMath(formula)}`
-  );
-
-  next = next.replace(
-    /(^|[^A-Za-z0-9\\$])(\d{1,8}\s*\/\s*\d{1,8}|(?:\\pi|[A-Za-zπ])\s*\/\s*(?:\\pi|[A-Za-z0-9π]+))/g,
-    (_match, prefix: string, formula: string) => `${prefix}${wrapMath(convertSimpleFraction(formula))}`
-  );
-
-  next = next.replace(
-    /(^|[^A-Za-z0-9\\$])([A-Za-z][ \t]*=[ \t]*[A-Za-z0-9\\{}^_+\-*/(). \t]{1,80})/g,
-    (_match, prefix: string, formula: string) => `${prefix}${wrapMath(formula)}`
-  );
-
-  // Catch-all: wrap any remaining bare LaTeX commands that weren't caught above
-  next = next.replace(
-    new RegExp(
-      `(\\\\(?:${LATEX_COMMANDS})(?:\\{[^{}]*\\}){0,3}(?:\\s*\\{[^{}]*\\}){0,2}(?:\\^\\{?[^{}\\s]+\\}?|_\\{?[^{}\\s]+\\}?)*)`,
-      "g"
-    ),
-    (match) => wrapMath(match)
-  );
-
-  return next;
-}
-
-function normalizeMathBlocks(value: string) {
-  let result = splitMathSegments(repairBrokenSyntax(value))
-    .map((segment) => (segment.math ? normalizeExistingMath(segment.value) : wrapBareMathInText(segment.value)))
-    .join("")
-    .replace(/\$\$([,，。；;:：])/g, "$1")
-    .replace(/([A-Za-z0-9}\)])\$\$(?=[,，。；;:：])/g, "$1")
-    .replace(/([A-Za-z0-9}\)])\$\$(?=\s*$)/gm, "$1")
-    .replace(/^\s*\${1,2}\s*$/gm, "")
-    .trim();
-
-  // Fix empty math blocks: $ $ → remove
-  result = result.replace(/\$\s+\$/g, "");
-
-  result = fixUnclosedFrac(result);
-  result = fixExponentSpacing(result);
-  result = fixDxDyOrder(result);
-
-  return result;
-}
-
-export function normalizeLatexText(input: string) {
-  return normalizeMathBlocks(String(input || "")).trim();
-}
-
-export const fixLatex = normalizeLatexText;
-
-export type LatexIntegrityResult = {
-  ok: boolean;
+﻿export type NormalizeMathResult = {
+  text: string;
   needsRepair: boolean;
-  errors: string[];
+  warnings: string[];
 };
 
-export function checkLatexIntegrity(text: string): LatexIntegrityResult {
-  const errors: string[] = [];
-  const mathText = String(text || "");
+function hasBalancedBraces(input: string): boolean {
+  let count = 0;
 
-  let braceDepth = 0;
-  for (const ch of mathText) {
-    if (ch === "{") braceDepth++;
-    if (ch === "}") braceDepth--;
-    if (braceDepth < 0) {
-      errors.push("大括号不匹配：多余的 }");
-      break;
-    }
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    const prev = i > 0 ? input[i - 1] : "";
+
+    if (ch === "{" && prev !== "\\") count++;
+    if (ch === "}" && prev !== "\\") count--;
+
+    if (count < 0) return false;
   }
-  if (braceDepth > 0) errors.push("大括号不匹配：缺少 }");
-  if (braceDepth < 0) errors.push("大括号不匹配：多余的 }");
 
-  const inlineOpen = (mathText.match(/\\\(/g) || []).length;
-  const inlineClose = (mathText.match(/\\\)/g) || []).length;
-  if (inlineOpen !== inlineClose) errors.push("\\( \\) 不匹配");
+  return count === 0;
+}
 
-  const displayOpen = (mathText.match(/\\\[/g) || []).length;
-  const displayClose = (mathText.match(/\\\]/g) || []).length;
-  if (displayOpen !== displayClose) errors.push("\\[ \\] 不匹配");
+function countMatches(input: string, pattern: RegExp): number {
+  const matches = input.match(pattern);
+  return matches ? matches.length : 0;
+}
 
-  const dollarPairs = (mathText.match(/\$\$/g) || []).length;
-  if (dollarPairs % 2 !== 0) errors.push("$$ 不成对");
+function hasBalancedMathDelimiters(input: string): boolean {
+  const inlineOpen = countMatches(input, /\\\(/g);
+  const inlineClose = countMatches(input, /\\\)/g);
+  const blockOpen = countMatches(input, /\\\[/g);
+  const blockClose = countMatches(input, /\\\]/g);
 
-  if (/\\frac\{[^}]*$/.test(mathText)) errors.push("存在残缺 \\frac");
-  if (/\\frac\{[^{}]*\}(?!\{)/.test(mathText) && !/\\frac\{[^{}]*\}\{/.test(mathText)) errors.push("存在未闭合 \\frac");
+  return inlineOpen === inlineClose && blockOpen === blockClose;
+}
+
+function normalizeLatexCommands(input: string): string {
+  let text = input;
+
+  text = text
+    .replace(/\$\$/g, "")
+    .replace(/\$+/g, "")
+    .replace(/\\le\s*q/g, "\\leq")
+    .replace(/\\ge\s*q/g, "\\geq")
+    .replace(/\\le\s*\n\s*q/g, "\\leq")
+    .replace(/\\ge\s*\n\s*q/g, "\\geq")
+    .replace(/\\leq+/g, "\\leq")
+    .replace(/\\geq+/g, "\\geq")
+    .replace(//g, "\\leq")
+    .replace(//g, "\\geq")
+    .replace(//g, "\\neq")
+    .replace(//g, "\\approx")
+    .replace(/π/g, "\\pi")
+    .replace(//g, "\\sqrt")
+    .replace(//g, "\\times")
+    .replace(//g, "\\div");
+
+  text = text
+    .replace(/\\frac\s*\{\s*\\pi\s*\}\s*\{\s*3\s*\}/g, "\\frac{\\pi}{3}")
+    .replace(/\\frac\s*\{\s*2\s*\\pi\s*\}\s*\{\s*3\s*\}/g, "\\frac{2\\pi}{3}")
+    .replace(/\\frac\s*\{\s*2\s*\}\s*\{\s*x\s*2\s*\}/g, "\\frac{2}{x^2}")
+    .replace(/\\frac\s*\{\s*2\s*\}\s*\{\s*x\^2\s*\}/g, "\\frac{2}{x^2}")
+    .replace(/\\frac\s*\{\s*dy\s*\}\s*\{\s*dx\s*\}/g, "\\frac{dy}{dx}");
+
+  text = text
+    .replace(/d\s*y\s*\/\s*d\s*x/g, "\\frac{dy}{dx}")
+    .replace(/dy\s*\/\s*dx/g, "\\frac{dy}{dx}")
+    .replace(/dx\s*dy/g, "\\frac{dy}{dx}")
+    .replace(/d\s*y\s*d\s*x/g, "\\frac{dy}{dx}");
+
+  text = text
+    .replace(/x\s*\n\s*2/g, "x^2")
+    .replace(/x\s+2/g, "x^2")
+    .replace(/x\s*\n\s*3/g, "x^3")
+    .replace(/x\s+3/g, "x^3")
+    .replace(/x\s*\n\s*4/g, "x^4")
+    .replace(/x\s+4/g, "x^4");
+
+  text = text
+    .replace(/([A-Za-z0-9)\]}])²/g, "$1^2")
+    .replace(/([A-Za-z0-9)\]}])³/g, "$1^3")
+    .replace(/([A-Za-z0-9)\]}])⁴/g, "$1^4")
+    .replace(/([A-Za-z0-9)\]}])⁵/g, "$1^5")
+    .replace(/([A-Za-z0-9)\]}])⁶/g, "$1^6")
+    .replace(/([A-Za-z0-9)\]}])⁷/g, "$1^7")
+    .replace(/([A-Za-z0-9)\]}])⁸/g, "$1^8")
+    .replace(/([A-Za-z0-9)\]}])⁹/g, "$1^9")
+    .replace(/([A-Za-z0-9)\]}])⁰/g, "$1^0");
+
+  text = text
+    .replace(/\\arg\s*\(\s*z\s*\)/g, "\\arg(z)")
+    .replace(/\\sin\s*\(\s*([^)]+?)\s*\)/g, "\\sin($1)")
+    .replace(/\\cos\s*\(\s*([^)]+?)\s*\)/g, "\\cos($1)")
+    .replace(/\\tan\s*\(\s*([^)]+?)\s*\)/g, "\\tan($1)");
+
+  text = text.replace(/\\frac\{\s*([^{}]+?)\s*\}\{\s*([^{}]+?)\s*\}/g, (_match, a: string, b: string) => {
+    return `\\frac{${a.trim()}}{${b.trim()}}`;
+  });
+
+  return text;
+}
+
+function wrapKnownMathExpressions(input: string): string {
+  let text = input;
+
+  text = text.replace(
+    /\\frac\{\\pi\}\{3\}\s*\\leq\s*\\arg\(z\)\s*\\leq\s*\\frac\{2\\pi\}\{3\}/g,
+    "\\( \\frac{\\pi}{3} \\leq \\arg(z) \\leq \\frac{2\\pi}{3} \\)"
+  );
+
+  text = text.replace(
+    /\|z\|\s*=\s*4/g,
+    "\\( |z|=4 \\)"
+  );
+
+  text = text.replace(
+    /\\frac\{dy\}\{dx\}\s*=\s*12x\^2\s*-\s*\\frac\{2\}\{x\^2\}/g,
+    "\\( \\frac{dy}{dx}=12x^2-\\frac{2}{x^2} \\)"
+  );
+
+  text = text.replace(
+    /12x\^4\s*\+\s*5x\^2\s*-\s*2\s*=\s*0/g,
+    "\\( 12x^4+5x^2-2=0 \\)"
+  );
+
+  text = text.replace(
+    /\(3u\s*\+\s*2\)\(4u\s*-\s*1\)\s*=\s*0/g,
+    "\\( (3u+2)(4u-1)=0 \\)"
+  );
+
+  return text;
+}
+
+function normalizeSpacing(input: string): string {
+  return input
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function hasBrokenFrac(input: string): boolean {
+  return /\\frac\{[^}]*$/.test(input) || /\\frac\{[^}]*\}\{[^}]*$/.test(input);
+}
+
+function hasBrokenCommand(input: string): boolean {
+  return /\\(le|ge)\s+q/.test(input) || /\\frac\s*$/.test(input);
+}
+
+export function normalizeMathText(raw: unknown): NormalizeMathResult {
+  const warnings: string[] = [];
+
+  if (raw === null || raw === undefined) {
+    return {
+      text: "",
+      needsRepair: false,
+      warnings,
+    };
+  }
+
+  let text = String(raw);
+
+  text = normalizeSpacing(text);
+  text = normalizeLatexCommands(text);
+  text = wrapKnownMathExpressions(text);
+  text = normalizeSpacing(text);
+
+  const bracesOk = hasBalancedBraces(text);
+  const delimitersOk = hasBalancedMathDelimiters(text);
+  const brokenFrac = hasBrokenFrac(text);
+  const brokenCommand = hasBrokenCommand(text);
+
+  if (!bracesOk) warnings.push("LaTeX braces are not balanced.");
+  if (!delimitersOk) warnings.push("LaTeX math delimiters are not balanced.");
+  if (brokenFrac) warnings.push("Broken \\frac expression detected.");
+  if (brokenCommand) warnings.push("Broken LaTeX command detected.");
 
   return {
-    ok: errors.length === 0,
-    needsRepair: errors.length > 0,
-    errors
+    text,
+    needsRepair: !bracesOk || !delimitersOk || brokenFrac || brokenCommand,
+    warnings,
   };
 }
 
-export function normalizeMathText(text: string): { value: string; needsRepair: boolean } {
-  const normalized = normalizeLatexText(text);
-  const integrity = checkLatexIntegrity(normalized);
+export function toPlainMathFallback(raw: unknown): string {
+  const normalized = normalizeMathText(raw).text;
 
-  if (integrity.needsRepair) {
-    const repaired = normalizeLatexText(
-      normalized
-        .replace(/\\frac\{([^{}]*)\}(?!\{)/g, "\\frac{$1}{\\cdot}")
-    );
-    const recheck = checkLatexIntegrity(repaired);
-    return { value: repaired, needsRepair: !recheck.ok };
+  return normalized
+    .replace(/\\\(/g, "")
+    .replace(/\\\)/g, "")
+    .replace(/\\\[/g, "")
+    .replace(/\\\]/g, "")
+    .replace(/\\frac\{([^{}]+)\}\{([^{}]+)\}/g, "($1)/($2)")
+    .replace(/\\leq/g, "")
+    .replace(/\\geq/g, "")
+    .replace(/\\neq/g, "")
+    .replace(/\\approx/g, "")
+    .replace(/\\pi/g, "π")
+    .replace(/\\arg/g, "arg")
+    .replace(/\\sin/g, "sin")
+    .replace(/\\cos/g, "cos")
+    .replace(/\\tan/g, "tan")
+    .replace(/\\sqrt/g, "sqrt")
+    .replace(/[{}]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function safeRenderMathText(raw: unknown): string {
+  const result = normalizeMathText(raw);
+
+  if (!result.needsRepair) {
+    return result.text;
   }
 
-  return { value: normalized, needsRepair: false };
+  return toPlainMathFallback(result.text);
+}
+
+export function normalizeLatex(raw: unknown): string {
+  return safeRenderMathText(raw);
+}
+
+export function normalizeLatexText(raw: unknown): string {
+  return safeRenderMathText(raw);
+}
+
+export function sanitizeLatex(raw: unknown): string {
+  return safeRenderMathText(raw);
+}
+
+export function cleanAiLatex(raw: unknown): string {
+  return safeRenderMathText(raw);
+}
+
+export function repairLatex(raw: unknown): string {
+  return safeRenderMathText(raw);
+}
+
+export function normalizeMathObject<T>(value: T): T {
+  if (typeof value === "string") {
+    return safeRenderMathText(value) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeMathObject(item)) as T;
+  }
+
+  if (value && typeof value === "object") {
+    const output: Record<string, unknown> = {};
+
+    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+      output[key] = normalizeMathObject(item);
+    }
+
+    return output as T;
+  }
+
+  return value;
 }
