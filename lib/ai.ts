@@ -2,6 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 import { robustParseAiJson } from "@/lib/ai/jsonRepair";
+import { applyFinalAnswerRulesToPayload, cleanFinalAnswerChunk } from "@/lib/ai/finalAnswerMode";
 import type { AnalysisResult, ErrorType, Quiz, QuizQuestion, ReviewResult, WrongQuestion } from "@/types/quiz";
 import { fixLatex } from "@/lib/latex";
 import { mathOutputInstruction } from "@/lib/language";
@@ -68,7 +69,7 @@ async function postQwenChatCompletion(body: Record<string, unknown>) {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(applyFinalAnswerRulesToPayload(body))
   });
 
   if (!response.ok) {
@@ -96,7 +97,7 @@ function readAssistantText(data: { choices?: Array<{ message?: { content?: strin
     throw new Error("AI 服务没有返回有效内容。");
   }
 
-  return content.trim();
+  return cleanFinalAnswerChunk(content).trim();
 }
 
 function fixLatexArray(input: string[]) {

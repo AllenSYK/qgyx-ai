@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { apiError } from "@/lib/api-response";
+import { appendFinalAnswerRules, cleanFinalAnswerChunk } from "@/lib/ai/finalAnswerMode";
 import {
   JOB_PROGRESS,
   originalExplanationToAnalysisResult,
@@ -79,7 +80,7 @@ function selectModel(plan: string | null) {
 }
 
 function buildSystemPrompt() {
-  return `
+  const prompt = `
 你是一个专业数学老师。
 你正在为学生讲解图片中的题目。
 
@@ -103,6 +104,7 @@ function buildSystemPrompt() {
 11. 如果看不清题目，先说明图片部分不清晰，然后给出你能识别的内容。
 12. 解题时按“题目识别 / 答案 / 解析”三段输出。
 `.trim();
+  return appendFinalAnswerRules(prompt);
 }
 
 function buildUserPrompt() {
@@ -698,7 +700,7 @@ export async function POST(req: NextRequest) {
               }>;
               usage?: AiUsage;
             };
-            const delta = json.choices?.[0]?.delta?.content || "";
+            const delta = cleanFinalAnswerChunk(json.choices?.[0]?.delta?.content || "");
 
             if (delta) {
               fullMarkdown += delta;

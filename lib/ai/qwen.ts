@@ -1,5 +1,7 @@
 ﻿import "server-only";
 
+import { applyFinalAnswerRulesToPayload, cleanFinalAnswerChunk } from "@/lib/ai/finalAnswerMode";
+
 export const QWEN_BASE_URL =
   process.env.QWEN_BASE_URL ||
   process.env.DASHSCOPE_BASE_URL ||
@@ -202,7 +204,7 @@ export async function postQwenChatCompletion(body: Record<string, unknown>) {
   const minimumTimeoutMs = provider === "qwen" ? 45000 : 1000;
   const timeoutMs = typeof body.timeoutMs === "number" ? Math.max(minimumTimeoutMs, body.timeoutMs) : defaultTimeoutMs;
   const { timeoutMs: _timeoutMs, ...payload } = body;
-  const requestPayload = cleanPayloadForProvider(provider, payload);
+  const requestPayload = cleanPayloadForProvider(provider, applyFinalAnswerRulesToPayload(payload));
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -275,7 +277,7 @@ export async function* streamQwenChatCompletion(
   );
 
   const { timeoutMs: _timeoutMs, ...payload } = body;
-  const requestPayload = cleanPayloadForProvider(provider, payload);
+  const requestPayload = cleanPayloadForProvider(provider, applyFinalAnswerRulesToPayload(payload));
   const controller = new AbortController();
 
   let receivedFirstToken = false;
@@ -429,10 +431,14 @@ export async function* streamQwenChatCompletion(
             if (firstTokenTimer) clearTimeout(firstTokenTimer);
           }
 
-          yield {
-            text,
-            usage: parsed.usage || null
-          };
+          const cleanedText = cleanFinalAnswerChunk(text);
+
+          if (cleanedText) {
+            yield {
+              text: cleanedText,
+              usage: parsed.usage || null
+            };
+          }
         }
       }
     }
@@ -451,10 +457,14 @@ export async function* streamQwenChatCompletion(
         if (firstTokenTimer) clearTimeout(firstTokenTimer);
       }
 
-      yield {
-        text: tailText,
-        usage: parsedTail?.usage || null
-      };
+      const cleanedTailText = cleanFinalAnswerChunk(tailText);
+
+      if (cleanedTailText) {
+        yield {
+          text: cleanedTailText,
+          usage: parsedTail?.usage || null
+        };
+      }
     }
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
@@ -502,5 +512,5 @@ export function readAssistantText(data: { choices?: Array<{ message?: { content?
     throw new Error("AI 服务没有返回有效内容。");
   }
 
-  return content.trim();
+  return cleanFinalAnswerChunk(content).trim();
 }
