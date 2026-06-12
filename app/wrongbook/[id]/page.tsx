@@ -63,15 +63,15 @@ export default async function WrongDetailPage({ params }: { params: Promise<{ id
   const tags = Array.from(
     new Set(
       [
-        item.subject,
-        item.question_type,
         item.knowledge_point,
         item.difficulty,
         item.error_type,
+        item.subject,
+        item.question_type,
         ...(item.tags || [])
       ].filter(Boolean) as string[]
     )
-  );
+  ).slice(0, 2);
 
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-4 py-6 pb-24 sm:px-6 lg:px-8">

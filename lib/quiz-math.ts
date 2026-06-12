@@ -2,32 +2,39 @@ import type { QuizQuestion, WrongQuestion } from "@/types/quiz";
 
 const mathDelimiterPattern = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\])/g;
 const latexSignalPattern =
-  /\\text\{|\\frac|\\sqrt|\\times|\\div|\\cdot|\\left|\\right|\\sin|\\cos|\\tan|\\pi|\\leq|\\geq|\\neq|\\approx|\^|_/;
+  /\\(?:text|mathrm|operatorname|frac|dfrac|tfrac|sqrt|times|div|cdot|left|right|sin|cos|tan|cot|sec|csc|ln|log|lim|sum|prod|int|pi|theta|alpha|beta|gamma|delta|Delta|lambda|mu|sigma|omega|Omega|leq|geq|neq|approx|equiv|pm|mp|infty|in|notin|subset|subseteq|cup|cap|angle|triangle|parallel|perp|overline|vec|begin|end)\b|\^|_/;
 const latexCommandAfterEscapedSlashPattern =
-  /\\\\(?=(text|frac|sqrt|times|div|cdot|left|right|sin|cos|tan|pi|leq|geq|neq|approx)\b|\(|\)|\[|\])/g;
+  /\\\\(?=(text|mathrm|operatorname|frac|dfrac|tfrac|sqrt|times|div|cdot|left|right|sin|cos|tan|cot|sec|csc|ln|log|lim|sum|prod|int|pi|theta|alpha|beta|gamma|delta|Delta|lambda|mu|sigma|omega|Omega|leq|geq|neq|approx|equiv|pm|mp|infty|in|notin|subset|subseteq|cup|cap|angle|triangle|parallel|perp|overline|vec|begin|end)\b|\(|\)|\[|\]|\$)/g;
 const unitLatexPattern =
   /((?:[-+]?\d+(?:\.\d+)?|[A-Za-z](?!\.\s)(?:_[A-Za-z0-9{}]+)?)(?:[0-9A-Za-z+\-*/=().,\s\\{}^_]*?)\\text\{[^}]+\}(?:[0-9A-Za-z+\-*/=().,\s\\{}^_]*)?)/g;
+const latexEnvironmentPattern =
+  /(\\begin\{(aligned|array|matrix|cases|pmatrix|bmatrix|vmatrix|smallmatrix)\}[\s\S]*?\\end\{\2\})/g;
 const generalLatexPattern =
-  /((?:\\(?:frac|sqrt)\{[^{}]+\}(?:\{[^{}]+\})?|\\(?:sin|cos|tan|left|right|times|div|cdot|pi|leq|geq|neq|approx)\b|[A-Za-z0-9)\]}]\s*[\^_]\s*\{?[A-Za-z0-9+\-]+\}?)(?:[0-9A-Za-z+\-*/=().,\s\\{}^_]*)?)/g;
+  /((?:\\(?:frac|dfrac|tfrac)\{[^{}]+\}(?:\{[^{}]+\})?|\\sqrt(?:\[[^\]]+\])?\{[^{}]+\}|\\(?:sin|cos|tan|cot|sec|csc|ln|log|lim|sum|prod|int|left|right|times|div|cdot|pi|theta|alpha|beta|gamma|delta|Delta|lambda|mu|sigma|omega|Omega|leq|geq|neq|approx|equiv|pm|mp|infty|in|notin|subset|subseteq|cup|cap|angle|triangle|parallel|perp|overline|vec)\b|[A-Za-z0-9)\]}]\s*[\^_]\s*\{?[A-Za-z0-9+\-]+\}?)(?:[0-9A-Za-z+\-*/=<>()[\].,;:\s\\{}^_|&]*)?)/g;
 const bareEquationPattern = /([A-Za-z][A-Za-z0-9_]*\s*=\s*[A-Za-z0-9+\-*/().\s^_]+)/g;
 
 function hasMathDelimiter(input: string) {
   return /\$[^$]+\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\]/.test(input);
 }
 
-function wrapMath(match: string) {
+function wrapMath(match: string, display = false) {
   if (!match.trim() || hasMathDelimiter(match)) {
     return match;
   }
 
   const leading = match.match(/^\s*/)?.[0] || "";
   const trailing = match.match(/\s*$/)?.[0] || "";
+
+  if (display) {
+    return `${leading}\n\\[\n${match.trim()}\n\\]\n${trailing}`;
+  }
+
   return `${leading}$${match.trim()}$${trailing}`;
 }
 
-function protectWrapped(match: string, protectedMath: string[]) {
+function protectWrapped(match: string, protectedMath: string[], display = false) {
   const token = `@@QGYXMATH${protectedMath.length}@@`;
-  protectedMath.push(wrapMath(match));
+  protectedMath.push(wrapMath(match, display));
   return token;
 }
 
@@ -44,7 +51,8 @@ function wrapNakedLatex(segment: string) {
   }
 
   const protectedMath: string[] = [];
-  let text = segment.replace(unitLatexPattern, (match) => protectWrapped(match, protectedMath));
+  let text = segment.replace(latexEnvironmentPattern, (match) => protectWrapped(match, protectedMath, true));
+  text = text.replace(unitLatexPattern, (match) => protectWrapped(match, protectedMath));
   text = text.replace(generalLatexPattern, (match) => protectWrapped(match, protectedMath));
   text = text.replace(bareEquationPattern, (match) => protectWrapped(match, protectedMath));
 
@@ -56,7 +64,8 @@ export function normalizeQuizMathText(input: string | null | undefined): string 
 
   let text = String(input)
     .replace(/\r\n/g, "\n")
-    .replace(latexCommandAfterEscapedSlashPattern, "\\");
+    .replace(latexCommandAfterEscapedSlashPattern, "\\")
+    .replace(/\\\$/g, "$");
 
   text = text
     .replace(/,\\text\{/g, "\\,\\text{")

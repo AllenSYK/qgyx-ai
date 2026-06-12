@@ -63,9 +63,10 @@ export default function MarkdownRenderer({
   const value = toRemarkMathSyntax(String(content ?? text ?? children ?? ""));
   const Wrapper = as as ElementType;
   const inline = as === "span";
+  const wrapperClassName = ["markdown-renderer math-text", className].filter(Boolean).join(" ");
 
   return (
-    <Wrapper className={className}>
+    <Wrapper className={wrapperClassName}>
       <ReactMarkdown
         remarkPlugins={[remarkMath]}
         rehypePlugins={[rehypeKatex]}

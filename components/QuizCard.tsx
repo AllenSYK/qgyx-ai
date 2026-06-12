@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import QuizMathText, { InlineQuizMathText } from "@/components/QuizMathText";
+import { translateTagLabel } from "@/lib/labels";
+import { compactQuizQuestionTags } from "@/lib/quiz-tags";
 import type { Quiz, StudyMode, StudyRecordPayload, WrongQuestion } from "@/types/quiz";
 
 type QuizCardProps = {
@@ -112,17 +114,7 @@ export default function QuizCard({
   const answeredCount = Object.keys(answers).length;
   const correctCount = quiz.questions.filter((question, index) => answers[index] === question.answerIndex).length;
   const accuracy = quiz.questions.length > 0 ? Math.round((correctCount / quiz.questions.length) * 100) : 0;
-  const currentTags = Array.from(
-    new Set(
-      [
-        current.subject || quiz.subject,
-        current.questionType || quiz.questionType,
-        current.knowledgePoint,
-        current.difficulty,
-        ...(current.tags || [])
-      ].filter(Boolean) as string[]
-    )
-  );
+  const currentTags = compactQuizQuestionTags(current, quiz);
 
   const wrongQuestions = useMemo(() => {
     return quiz.questions
@@ -133,17 +125,7 @@ export default function QuizCard({
           return null;
         }
 
-        const tags = Array.from(
-          new Set(
-            [
-              question.subject || quiz.subject,
-              question.questionType || quiz.questionType,
-              question.knowledgePoint,
-              question.difficulty,
-              ...(question.tags || [])
-            ].filter(Boolean) as string[]
-          )
-        );
+        const tags = compactQuizQuestionTags(question, quiz);
 
         return {
           ...question,
@@ -456,7 +438,7 @@ export default function QuizCard({
               <div className="flex flex-wrap gap-2">
                 {currentTags.map((tag) => (
                   <span key={tag} className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm">
-                    {tag}
+                    {translateTagLabel(tag)}
                   </span>
                 ))}
               </div>

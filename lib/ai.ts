@@ -7,6 +7,7 @@ import type { AnalysisResult, ErrorType, Quiz, QuizQuestion, ReviewResult, Wrong
 import { fixLatex } from "@/lib/latex";
 import { mathOutputInstruction } from "@/lib/language";
 import { normalizeQuizMathText } from "@/lib/quiz-math";
+import { compactTagList } from "@/lib/quiz-tags";
 
 export { fixLatex, normalizeLatexText } from "@/lib/latex";
 
@@ -260,6 +261,7 @@ function normalizeQuestion(input: unknown): QuizQuestion {
             : typeof value.tag === "string" && value.tag.trim()
               ? value.tag
               : "核心知识点";
+  const difficulty = normalizeDifficulty(value.difficulty);
 
   return {
     question: normalizeQuizMathText(fixLatex(question)),
@@ -267,8 +269,8 @@ function normalizeQuestion(input: unknown): QuizQuestion {
     answerIndex,
     explanation: normalizeQuizMathText(fixLatex(explanation)),
     knowledgePoint: normalizeQuizMathText(fixLatex(knowledgePoint)),
-    difficulty: normalizeDifficulty(value.difficulty),
-    tags: normalizeStringArray(value.tags, [knowledgePoint]),
+    difficulty,
+    tags: compactTagList([knowledgePoint, difficulty, ...normalizeStringArray(value.tags, [])]),
     subject: typeof value.subject === "string" && value.subject.trim() ? fixLatex(value.subject) : undefined,
     questionType:
       typeof value.questionType === "string" && value.questionType.trim()
@@ -844,11 +846,11 @@ function fallbackWrongQuestionInsight(question: WrongQuestion): WrongQuestion {
       question.improvementSuggestion
         ? normalizeQuizMathText(fixLatex(question.improvementSuggestion))
         : `先复盘「${normalizeQuizMathText(fixLatex(knowledgePoint))}」的定义和典型题型，再按步骤重做一遍。`,
-    tags: normalizeStringArray(question.tags, [
-      question.subject || "综合",
+    tags: compactTagList([
       knowledgePoint,
       question.difficulty || "medium",
-      question.errorType || "审题错误"
+      question.errorType || "审题错误",
+      ...normalizeStringArray(question.tags, [])
     ])
   };
 }

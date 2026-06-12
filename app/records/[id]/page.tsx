@@ -121,7 +121,7 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
             {questions.map((question, index) => {
               const userAnswerIndex = answers[String(index)];
               const isCorrect = userAnswerIndex === question.answerIndex;
-              const tags = Array.from(new Set([question.subject, question.questionType, question.knowledgePoint, question.difficulty, ...(question.tags || [])].filter(Boolean) as string[]));
+              const tags = Array.from(new Set([question.knowledgePoint, question.difficulty, question.subject, question.questionType, ...(question.tags || [])].filter(Boolean) as string[])).slice(0, 2);
               const wrong = wrongs.find((item) => item.question === question.question);
 
               return (

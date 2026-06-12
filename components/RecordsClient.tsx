@@ -130,7 +130,7 @@ export default function RecordsClient({
                       .filter(Boolean)
                       .map(String)
                   )
-                ).slice(0, 4);
+                ).slice(0, 2);
 
                 return (
                   <article key={record.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-4 transition hover:bg-white hover:shadow-sm">

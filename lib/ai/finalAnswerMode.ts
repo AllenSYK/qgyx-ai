@@ -23,17 +23,28 @@ export const FINAL_ANSWER_OUTPUT_RULES = `【最终答案输出规则】
 4. 下次避免方法`;
 
 const DRAFT_OUTPUT_PATTERNS = [
+  /<think>[\s\S]*?<\/think>/gi,
+  /<\/?think[^>]*>/gi,
   /不对[，,。！？!\s]*/g,
   /等等[，,。！？!\s]*/g,
   /我重新看(?:一下)?[，,。！？!\s]*/g,
+  /重新(?:思考|检查|计算)(?:一下)?[，,。！？!\s]*/g,
+  /再(?:思考|检查|计算)(?:一下)?[，,。！？!\s]*/g,
   /刚才(?:算错了|错了|有误)?[，,。！？!\s]*/g,
+  /前面(?:的)?(?:推导|计算|答案)?(?:有误|不对|错了)[，,。！？!\s]*/g,
   /算错了[，,。！？!\s]*/g,
   /应该不是[，,。！？!\s]*/g,
+  /这里(?:有误|不对|错了)[，,。！？!\s]*/g,
   /换一种思路[，,。！？!\s]*/g,
   /先试一下[，,。！？!\s]*/g,
   /可能是[，,。！？!\s]*/g,
   /让我检查(?:一下)?[，,。！？!\s]*/g,
-  /抱歉，?前面有误[，,。！？!\s]*/g
+  /我(?:来)?(?:检查|验证)(?:一下)?[，,。！？!\s]*/g,
+  /(?:更正|修正)(?:一下)?[：:，,。！？!\s]*/g,
+  /抱歉，?前面有误[，,。！？!\s]*/g,
+  /let me (?:think|check|recheck|recalculate)[^.!?\n]*(?:[.!?]\s*)?/gi,
+  /I (?:need to|will) (?:think|check|recheck|recalculate)[^.!?\n]*(?:[.!?]\s*)?/gi,
+  /(?:wait|actually),?\s+(?:that'?s|this is|I was)[^.!?\n]*(?:[.!?]\s*)?/gi
 ];
 
 export function appendFinalAnswerRules(systemPrompt: string) {

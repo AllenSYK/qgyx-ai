@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
-import { LockKeyhole, LogIn, Mail, UserPlus } from "lucide-react";
+import { LoaderCircle, LockKeyhole, LogIn, Mail, UserPlus } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type AuthFormProps = {
@@ -77,6 +77,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
     }
 
     setLoading(true);
+    let keepLoadingForNavigation = false;
 
     try {
       if (isLogin) {
@@ -93,6 +94,7 @@ export default function AuthForm({ mode }: AuthFormProps) {
         }
 
         await syncProfileByAuthUser();
+        keepLoadingForNavigation = true;
         router.push("/dashboard");
         router.refresh();
         return;
@@ -119,11 +121,14 @@ export default function AuthForm({ mode }: AuthFormProps) {
       sessionStorage.setItem("qgyx_register_email", cleanEmail);
       sessionStorage.setItem("qgyx_register_password", password);
 
+      keepLoadingForNavigation = true;
       router.push(`/verify-email?email=${encodeURIComponent(cleanEmail)}`);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "操作失败，请稍后再试。");
     } finally {
-      setLoading(false);
+      if (!keepLoadingForNavigation) {
+        setLoading(false);
+      }
     }
   }
 
@@ -253,10 +258,17 @@ export default function AuthForm({ mode }: AuthFormProps) {
       <button
         type="submit"
         disabled={loading}
+        aria-busy={loading}
         className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 font-semibold text-white transition duration-200 ease-out hover:-translate-y-0.5 hover:bg-blue-700 active:scale-[0.97] active:opacity-75 disabled:cursor-not-allowed disabled:bg-blue-300 disabled:opacity-75"
       >
-        {isLogin ? <LogIn className="h-5 w-5" /> : <UserPlus className="h-5 w-5" />}
-        {isLogin ? "登录" : loading ? "正在发送验证码..." : "发送邮箱验证码"}
+        {loading ? (
+          <LoaderCircle className="h-5 w-5 animate-spin" />
+        ) : isLogin ? (
+          <LogIn className="h-5 w-5" />
+        ) : (
+          <UserPlus className="h-5 w-5" />
+        )}
+        {isLogin ? (loading ? "正在登录..." : "登录") : loading ? "正在发送验证码..." : "发送邮箱验证码"}
       </button>
 
       <p className="mt-6 text-center text-sm text-slate-600">

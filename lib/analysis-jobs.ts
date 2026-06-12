@@ -9,6 +9,7 @@ import type {
 import { markdownFromOriginalExplanation } from "@/lib/ai/originalExplanationFromMarkdown";
 import { normalizeLanguage, type AppLanguage } from "@/lib/language";
 import { normalizeQuizMathText } from "@/lib/quiz-math";
+import { compactTagList } from "@/lib/quiz-tags";
 import type { AnalysisResult, Quiz, QuizQuestion } from "@/types/quiz";
 
 export type AnalysisJobStatus =
@@ -96,7 +97,7 @@ export function quizResultToLegacyQuizForLanguage(
     knowledgePoint: normalizeQuizMathText(question.topic),
     difficulty: question.difficulty,
     subject: original?.subject,
-    tags: [original?.subject, question.topic, question.difficulty].filter(Boolean) as string[]
+    tags: compactTagList([question.topic, question.difficulty])
   }));
 
   return {
