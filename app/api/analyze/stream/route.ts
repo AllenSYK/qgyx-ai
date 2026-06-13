@@ -2,7 +2,6 @@ import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { apiError } from "@/lib/api-response";
 import { appendFinalAnswerRules, cleanFinalAnswerChunk } from "@/lib/ai/finalAnswerMode";
-import { cleanAnalysisMarkdown } from "@/lib/analysisMarkdown";
 import {
   JOB_PROGRESS,
   originalExplanationToAnalysisResult,
@@ -12,7 +11,6 @@ import {
 import { generateQuiz } from "@/lib/ai/generateQuiz";
 import { createOriginalExplanationFromMarkdown } from "@/lib/ai/originalExplanationFromMarkdown";
 import {
-  isUsableOriginalExplanation,
   normalizeOriginalExplanationShape
 } from "@/lib/ai/originalExplanationQuality";
 import type { OriginalExplanation } from "@/lib/ai/schema";
@@ -90,23 +88,18 @@ function buildSystemPrompt() {
 1. 只输出 Markdown，不输出 JSON。
 2. 只输出最终整理后的答案，不输出思考过程、试错过程、自我反驳或自我修正。
 3. 禁止出现“等等、不对、刚才错了、我重新看、让我检查、可能是、前面有误、换一种思路”等话术。
-4. 结构固定为：
+4. 结构固定为，只能有这三段：
 ## 题目
-一行写出识别到的题目。
+先输出识别到的题目，保留题干、条件、公式和问法。
+
+## 过程
+最多 3 行，只写必要公式和关键步骤，必须简单易懂。
 
 ## 答案
 直接给出最终答案。
-
-## 解析
-1. 关键步骤一。
-2. 关键步骤二。
-最多 4 步，简洁清楚。
-
-## 易错点
-- 写 1 条真正容易错的点。
 5. 行内公式必须使用 $...$，独立公式必须使用 $$...$$。
 6. 禁止输出裸 LaTeX，例如不能直接输出 \\frac{1}{2}、\\sum、\\binom、x^{2}。
-7. 不要把公式放进代码块，不要输出 HTML。
+7. 不要输出“易错点、知识点、类似题思路、详细步骤、检查、验证、重新计算”等额外段落。
 8. 如果看不清题目，只输出“题目不清晰，请重新上传更完整的题目图片。”，不要猜题。
 `.trim();
   return appendFinalAnswerRules(prompt);
@@ -116,9 +109,10 @@ function buildUserPrompt() {
   return [
     "请识别图片中的题目，并直接给出最终答案和简洁解析。",
     "要求：",
+    "- 先输出题目识别",
     "- 不展示思考、自我检查或修正过程",
     "- 答案必须明确",
-    "- 解析只写关键步骤",
+    "- 过程最多 3 行，只写关键步骤",
     "- 数学公式必须可被 KaTeX 渲染",
     "- 不要输出 JSON",
     "- 不要输出代码块",
@@ -397,14 +391,13 @@ async function generateQuizForStreamJob({
       return;
     }
 
-    if (!job.original_explanation) {
-      throw new Error("缺少可用的原题解析，无法继续生成 Quiz。");
-    }
+    const originalExplanation = job.original_explanation
+      ? normalizeOriginalExplanationShape(job.original_explanation as OriginalExplanation)
+      : null;
+    const detectedText = String(job.detected_text || originalExplanation?.detectedText || "");
 
-    const originalExplanation = normalizeOriginalExplanationShape(job.original_explanation as OriginalExplanation);
-
-    if (!isUsableOriginalExplanation(originalExplanation)) {
-      throw new Error("缺少可用的原题解析，无法继续生成 Quiz。");
+    if (!originalExplanation || detectedText.replace(/\s+/g, "").length < 4) {
+      throw new Error("缺少真实题干，无法继续生成 Quiz。");
     }
 
     const { data: claimed, error: claimError } = await admin
@@ -431,7 +424,7 @@ async function generateQuizForStreamJob({
     }
 
     const quizResult = await generateQuiz({
-      detectedText: String(job.detected_text || originalExplanation.detectedText),
+      detectedText,
       originalExplanation,
       subject: originalExplanation.subject,
       topic: originalExplanation.topic,
@@ -511,7 +504,7 @@ function extractQuestionText(markdown: string) {
 
     if (
       capturing &&
-      ["答案", "最终答案", "answer", "final answer", "解析", "详细解析", "explanation", "solution"].includes(label)
+      ["答案", "最终答案", "answer", "final answer", "过程", "解析", "详细解析", "explanation", "solution", "process"].includes(label)
     ) {
       break;
     }
@@ -537,12 +530,6 @@ function originalExplanationFromStreamMarkdown(markdown: string, language: AppLa
 }
 
 function cleanStreamMarkdown(markdown: string, language: AppLanguage) {
-  const cleaned = normalizeQuizMathText(cleanAnalysisMarkdown(cleanFinalAnswerChunk(markdown), language)).trim();
-
-  if (cleaned) {
-    return cleaned;
-  }
-
   return normalizeQuizMathText(cleanFinalAnswerChunk(markdown)).trim();
 }
 
@@ -680,6 +667,7 @@ export async function POST(req: NextRequest) {
       async start(controller) {
         let fullMarkdown = "";
         let upstreamBuffer = "";
+        let lineBuffer = "";
         let lastUsage: AiUsage | null = null;
 
         const sendEvent = (event: string, payload: Record<string, unknown>) => {
@@ -688,6 +676,34 @@ export async function POST(req: NextRequest) {
 
         const sendDelta = (delta: string) => {
           controller.enqueue(encoder.encode(sseData({ delta })));
+        };
+
+        const flushBufferedLines = (force = false) => {
+          lineBuffer = cleanFinalAnswerChunk(lineBuffer);
+          const splitIndex = lineBuffer.lastIndexOf("\n");
+          const shouldFlushTail = force && lineBuffer.trim();
+
+          if (splitIndex === -1 && !shouldFlushTail) {
+            return;
+          }
+
+          const ready = splitIndex === -1 ? lineBuffer : lineBuffer.slice(0, splitIndex + 1);
+          lineBuffer = splitIndex === -1 ? "" : lineBuffer.slice(splitIndex + 1);
+          const delta = cleanFinalAnswerChunk(ready);
+
+          if (delta) {
+            fullMarkdown += delta;
+            sendDelta(delta);
+          }
+        };
+
+        const pushModelDelta = (text: string) => {
+          if (!text) {
+            return;
+          }
+
+          lineBuffer += text;
+          flushBufferedLines(false);
         };
 
         function handleUpstreamBlock(block: string) {
@@ -715,12 +731,7 @@ export async function POST(req: NextRequest) {
               }>;
               usage?: AiUsage;
             };
-            const delta = cleanFinalAnswerChunk(json.choices?.[0]?.delta?.content || "");
-
-            if (delta) {
-              fullMarkdown += delta;
-              sendDelta(delta);
-            }
+            pushModelDelta(json.choices?.[0]?.delta?.content || "");
 
             if (json.usage) {
               lastUsage = json.usage;
@@ -775,6 +786,8 @@ export async function POST(req: NextRequest) {
             reader.releaseLock();
           }
 
+          flushBufferedLines(true);
+
           if (!fullMarkdown.trim()) {
             throw new AnalyzeStreamError("AI 没有返回有效解析内容，请稍后重试。", 503);
           }
@@ -789,9 +802,9 @@ export async function POST(req: NextRequest) {
                 title: rawQuestionText.replace(/\s+/g, " ").slice(0, 120)
               })
             : parsedOriginalExplanation;
-          const canGenerateQuiz = mode !== "analysis" && isUsableOriginalExplanation(originalExplanation);
-          const nextStatus = finalStatusForMode(mode, canGenerateQuiz);
           const detectedText = rawQuestionText || originalExplanation.detectedText;
+          const canGenerateQuiz = mode !== "analysis" && detectedText.replace(/\s+/g, "").length >= 4;
+          const nextStatus = finalStatusForMode(mode, canGenerateQuiz);
           const ocrHash = detectedText ? createTextHash(detectedText) : null;
 
           const row = await updateJobAndReturn(admin, jobId as string, nextStatus, {

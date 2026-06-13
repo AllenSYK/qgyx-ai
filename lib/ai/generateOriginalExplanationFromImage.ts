@@ -154,18 +154,18 @@ function buildMessages({
     mathOutputInstruction + '\n';
 
   const completenessRule = isComplex
-    ? '数学推导必须完整但简洁，不能停在中间式。例如得到 12x^4 + 5x^2 - 2 = 0 后必须继续解出 x 和 y 值。steps 中每个步骤必须包含 title、content 和 formula。formulas 数组必须包含推导中用到的关键公式。'
+    ? '数学推导必须完整但简洁，不能停在中间式。explanation 最多 3 行，只保留必要公式和关键步骤。'
     : '';
 
   const retryPrefix =
     '你是拍题解析助手。只看图片里的真实题目，只输出 JSON。看不清具体题目时只输出 ' + imgClearErr + '。不要输出 Markdown、思考过程、自我纠错、自我反驳或兜底废话。';
 
   const normalPrefix =
-    '你是拍题解析助手。请直接识别并解析图片中的真实题目，只输出 JSON。看不清具体题目时只输出 ' + imgClearErr + '。禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、自我检查、自我纠错、自我反驳、' + '<think>' + ' 标签。禁止输出“等等、不对、刚才错了、我重新看、让我检查、可能是、前面有误、换一种思路”等话术。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别”等兜底话术。解析要短，只保留关键步骤；';
+    '你是拍题解析助手。请直接识别并解析图片中的真实题目，只输出 JSON。看不清具体题目时只输出 ' + imgClearErr + '。禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、自我检查、自我纠错、自我反驳、' + '<think>' + ' 标签。禁止输出“等等、不对、刚才错了、我重新看、让我检查、可能是、前面有误、换一种思路”等话术。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别”等兜底话术。解析要短，只输出题目、简单过程、答案需要的信息；';
 
   const system = retry
-    ? retryPrefix + mathRule + completenessRule + 'keySteps<=4，knowledgePoints<=4，similarIdeas<=2，steps 最多 6 步。输出语言：' + outputLanguage + '。'
-    : normalPrefix + mathRule + completenessRule + 'keySteps<=4，knowledgePoints<=4，similarIdeas<=2，steps 最多 6 步。输出语言：' + outputLanguage + '。';
+    ? retryPrefix + mathRule + completenessRule + 'explanation 最多 3 行，keySteps<=3，knowledgePoints<=2，similarIdeas=1，steps 和 formulas 可留空。输出语言：' + outputLanguage + '。'
+    : normalPrefix + mathRule + completenessRule + 'explanation 最多 3 行，keySteps<=3，knowledgePoints<=2，similarIdeas=1，steps 和 formulas 可留空。输出语言：' + outputLanguage + '。';
 
   if (tier === 'max' && isComplex) {
     const systemContent =
@@ -174,7 +174,7 @@ function buildMessages({
       ORIGINAL_EXPLANATION_JSON_SHAPE;
 
     const userText =
-      '请识别并解析图片中的数学题目。要求：1) 一次给出确定答案 2) 推导简洁完整，不展示试错或纠错过程 3) 每步写出必要公式 4) 最终答案必须与推导一致 5) 如果发现常见易错点务必标注。图像摘要：' + (imageSummary || '无');
+      '请识别并解析图片中的数学题目。要求：1) 一次给出确定答案 2) 过程最多 3 行，不展示试错或纠错过程 3) 只写必要公式 4) 最终答案必须与过程一致。图像摘要：' + (imageSummary || '无');
 
     return [
       {

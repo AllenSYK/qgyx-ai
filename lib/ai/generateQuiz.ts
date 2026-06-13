@@ -39,13 +39,13 @@ export async function generateQuiz({
   const sourceQuestion = String(detectedText || originalExplanation.detectedText || "").trim();
   const originalPayloadText = JSON.stringify(originalExplanation);
 
-  if (
-    !isUsableOriginalExplanation(originalExplanation) ||
-    /模型未返回|答案已包含|Core method|核心方法|The model did not return|answer is included/i.test(originalPayloadText) ||
-    sourceQuestion.replace(/\s+/g, "").length < 4
-  ) {
-    throw new Error("缺少真实解析结果，无法生成 Quiz。");
+  if (sourceQuestion.replace(/\s+/g, "").length < 4) {
+    throw new Error("缺少真实题干，无法生成 Quiz。");
   }
+
+  const hasUsableExplanation =
+    isUsableOriginalExplanation(originalExplanation) &&
+    !/模型未返回|答案已包含|Core method|核心方法|The model did not return|answer is included/i.test(originalPayloadText);
 
   const safeQuestionCount = Math.min(4, Math.max(3, questionCount));
   const outputLanguage = normalizeLanguage(language);
@@ -61,6 +61,7 @@ ${languageRule}
 Do not output Thinking, Reasoning, Chain of Thought, internal analysis, self-checking, corrections, or <think> tags.
 生成 ${safeQuestionCount} 道围绕“原题具体条件、变量、公式和解法”的简洁变式选择题，每题 4 个选项，correctAnswer 只能是 A/B/C/D。
 题目必须明显来自原题：保留同类对象、同类公式和同类解法，只更换数字、条件或问法。禁止只根据泛泛知识点另起无关题。
+如果原题解析不完整，以“原题内容”为最高优先级，不要因为解析字段空泛而生成无关题。
 题目和选项必须短，不要长背景；不要包含 explanation、detailedExplanation 或长解析；不要基于兜底话术、空泛 topic 或占位解析出题。
 题干和选项要像考试试卷：凡是可以用数学形式表达的内容，都必须写成标准数学形式；不要写“x平方”“根号x”“π除以3”这类口语化数学。
 question 与 options 中的公式必须使用 KaTeX 可渲染 LaTeX；数学型选项尽量只写数学式，不要把 A/B/C/D 或解释拼进选项。
@@ -77,7 +78,7 @@ ${QUIZ_JSON_SHAPE}`
 ${sourceQuestion.slice(0, 1600)}
 
 原题解析：
-${JSON.stringify({
+${hasUsableExplanation ? JSON.stringify({
   title: originalExplanation.title,
   detectedText: originalExplanation.detectedText,
   subject: originalExplanation.subject,
@@ -88,7 +89,7 @@ ${JSON.stringify({
   keySteps: originalExplanation.keySteps,
   knowledgePoints: originalExplanation.knowledgePoints,
   formulas: originalExplanation.formulas
-}, null, 2)}
+}, null, 2) : "解析不完整，请只根据原题内容生成同类变式题。"}
 
 学科：${subject || originalExplanation.subject}
 知识点：${topic || originalExplanation.topic}

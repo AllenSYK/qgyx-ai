@@ -4,7 +4,6 @@ import { after } from "next/server";
 import { apiError, apiSuccess } from "@/lib/api-response";
 import { createJobStatusPayload, updateJobStatus } from "@/lib/analysis-jobs";
 import { generateQuiz } from "@/lib/ai/generateQuiz";
-import { isUsableOriginalExplanation } from "@/lib/ai/originalExplanationQuality";
 import type { OriginalExplanation } from "@/lib/ai/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { normalizeLanguage } from "@/lib/language";
@@ -25,17 +24,18 @@ async function continueQuizGeneration(jobId: string, userId: string) {
   }
 
   const originalExplanation = job.original_explanation as OriginalExplanation | null;
+  const detectedText = String(job.detected_text || originalExplanation?.detectedText || "");
 
-  if (!originalExplanation || !isUsableOriginalExplanation(originalExplanation)) {
+  if (!originalExplanation || detectedText.replace(/\s+/g, "").length < 4) {
     await updateJobStatus(admin, jobId, "failed", {
-      error_message: "缺少原题解析，无法继续生成 Quiz。"
+      error_message: "缺少真实题干，无法继续生成 Quiz。"
     });
     return;
   }
 
   try {
     const quizResult = await generateQuiz({
-      detectedText: String(job.detected_text || originalExplanation.detectedText),
+      detectedText,
       originalExplanation,
       subject: originalExplanation.subject,
       topic: originalExplanation.topic,

@@ -197,8 +197,9 @@ function deriveKeySteps(explanation: string, language: AppLanguage) {
 function languageLabels(language: AppLanguage) {
   if (language === "en") {
     return {
+      question: "Question",
       answer: "Answer",
-      explanation: "Explanation",
+      explanation: "Process",
       knowledge: "Key Points",
       mistakes: "Common Mistakes",
       similar: "Similar Ideas"
@@ -206,8 +207,9 @@ function languageLabels(language: AppLanguage) {
   }
 
   return {
+    question: "题目",
     answer: "答案",
-    explanation: "解析",
+    explanation: "过程",
     knowledge: "知识点",
     mistakes: "易错点",
     similar: "类似题思路"
@@ -221,47 +223,36 @@ export function isImageNotClearMarkdown(markdown: string) {
 export function markdownFromOriginalExplanation(original: OriginalExplanation, language: AppLanguage = "zh") {
   const outputLanguage = normalizeLanguage(language);
   const labels = languageLabels(outputLanguage);
-  const knowledgePoints = Array.isArray(original.knowledgePoints) ? original.knowledgePoints.filter(Boolean) : [];
-  const similarIdeas = Array.isArray(original.similarIdeas) ? original.similarIdeas.filter(Boolean) : [];
-  const commonMistake = String(original.commonMistake || "").trim();
-  const steps = Array.isArray(original.steps) ? original.steps : [];
-  const formulas = Array.isArray(original.formulas) ? original.formulas : [];
-  const warnings = Array.isArray(original.warnings) ? original.warnings : [];
-
-  return cleanAnalysisMarkdown(
-    [
-      `## ${labels.answer}`,
-      original.finalAnswer,
-      "",
-      `## ${labels.explanation}`,
-      original.explanation,
-      "",
-      steps.length ? `## ${outputLanguage === "en" ? "Detailed Steps" : "详细步骤"}` : "",
-      ...steps.map((step, i) => {
-        const lines = [`${i + 1}. **${step.title}**: ${step.content}`];
-        if (step.formula) lines.push(`   ${outputLanguage === "en" ? "Formula" : "公式"}: ${step.formula}`);
-        return lines.join("\n");
-      }),
-      "",
-      formulas.length ? `## ${outputLanguage === "en" ? "Key Formulas" : "关键公式"}` : "",
-      ...formulas.map((f) => `- ${f}`),
-      "",
-      knowledgePoints.length ? `## ${labels.knowledge}` : "",
-      ...knowledgePoints.slice(0, 4).map((point) => `- ${point}`),
-      "",
-      commonMistake ? `## ${labels.mistakes}` : "",
-      commonMistake ? `- ${commonMistake}` : "",
-      "",
-      similarIdeas.length ? `## ${labels.similar}` : "",
-      ...similarIdeas.slice(0, 2).map((idea) => `- ${idea}`),
-      "",
-      warnings.length ? `## ${outputLanguage === "en" ? "Note" : "温馨提示"}` : "",
-      ...warnings.map((w) => `- ${w}`)
-    ]
-      .filter((line, index, items) => line || (items[index - 1] && items[index + 1]))
-      .join("\n"),
-    outputLanguage
+  const keySteps = Array.isArray(original.keySteps) ? original.keySteps.filter(Boolean) : [];
+  const question = compact(stripMarkdown(original.detectedText || original.title || ""), original.topic, 800);
+  const processLines = normalizeLines(original.explanation || "")
+    .split("\n")
+    .map((line) => stripMarkdown(line).trim())
+    .filter((line) => line && !isPlaceholderText(line))
+    .slice(0, 4);
+  const processFallback =
+    keySteps.length > 0
+      ? keySteps.slice(0, 3).map((step, index) => `${index + 1}. ${step}`).join("\n")
+      : outputLanguage === "en"
+        ? "Use the given condition, apply the formula, and simplify."
+        : "代入题干条件，套用对应公式，整理结果。";
+  const process = compact(processLines.join("\n"), processFallback, 900);
+  const answer = compact(
+    stripMarkdown(original.finalAnswer || ""),
+    outputLanguage === "en" ? "See the result above." : "见上方结果。",
+    500
   );
+
+  return [
+    `## ${labels.question}`,
+    question,
+    "",
+    `## ${labels.explanation}`,
+    process,
+    "",
+    `## ${labels.answer}`,
+    answer
+  ].join("\n").trim();
 }
 
 export function createOriginalExplanationFromMarkdown(markdown: string, language: AppLanguage = "zh"): OriginalExplanation {

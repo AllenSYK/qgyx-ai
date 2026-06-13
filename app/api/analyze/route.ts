@@ -364,11 +364,7 @@ async function generateQuizForJob({
     const originalExplanation = job.original_explanation as OriginalExplanation | null;
     const detectedText = String(job.detected_text || originalExplanation?.detectedText || "");
 
-    if (!originalExplanation || !isUsableOriginalExplanation(originalExplanation)) {
-      throw new Error("缺少原题解析，无法继续生成 Quiz。");
-    }
-
-    if (!detectedText.trim()) {
+    if (!originalExplanation || detectedText.replace(/\s+/g, "").length < 4) {
       throw new Error("缺少真实题干，无法继续生成 Quiz。");
     }
 
