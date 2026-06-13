@@ -4,9 +4,9 @@ type SectionKey = "answer" | "explanation" | "knowledge" | "mistakes" | "similar
 
 const HEADING_LABELS: Record<SectionKey, string[]> = {
   answer: ["answer", "final answer", "correct answer", "答案", "最终答案", "正确答案"],
-  explanation: ["explanation", "solution", "steps", "step-by-step solution", "解析", "分步骤解析", "解题过程"],
+  explanation: ["explanation", "solution", "steps", "step-by-step solution", "解析", "分步骤解析", "解题过程", "解题思路", "关键步骤", "详细步骤"],
   knowledge: ["key points", "knowledge", "knowledge points", "知识点", "涉及知识点"],
-  mistakes: ["common mistakes", "common errors", "mistakes", "易错点", "常见错误"],
+  mistakes: ["common mistakes", "common errors", "mistakes", "易错点", "易错提醒", "常见错误"],
   similar: ["similar ideas", "similar problem ideas", "transfer ideas", "类似题思路", "类似题目思路", "迁移思路"],
   question: ["question", "problem", "recognized question", "ocr", "image description", "题目", "题目识别", "识别到的题目", "图片描述"]
 };
@@ -51,6 +51,15 @@ const THOUGHT_MARKERS = [
   "我先思考",
   "我来分析",
   "让我们分析",
+  "等等",
+  "不对",
+  "刚才错了",
+  "刚才算错了",
+  "前面有误",
+  "我重新看",
+  "让我检查",
+  "可能是",
+  "换一种思路",
   "重新检查",
   "再核对",
   "矛盾",

@@ -14,6 +14,7 @@ import {
   type AnalysisJobStatus
 } from "@/lib/analysis-jobs";
 import { cleanAnalysisMarkdown } from "@/lib/analysisMarkdown";
+import { cleanFinalAnswerChunk } from "@/lib/ai/finalAnswerMode";
 import { generateOriginalExplanation } from "@/lib/ai/generateOriginalExplanation";
 import { generateOriginalExplanationFromImage } from "@/lib/ai/generateOriginalExplanationFromImage";
 import { generateQuiz } from "@/lib/ai/generateQuiz";
@@ -45,6 +46,7 @@ import {
 import { normalizeLanguage, type AppLanguage } from "@/lib/language";
 import { normalizeLatexText } from "@/lib/latex";
 import { markdownFromOriginalExplanation } from "@/lib/ai/originalExplanationFromMarkdown";
+import { normalizeQuizMathText } from "@/lib/quiz-math";
 import type { Quiz, StudyMode } from "@/types/quiz";
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
@@ -605,7 +607,7 @@ async function createCachedJobResponse({
 }
 
 function cleanOriginalText(value: string, language: AppLanguage) {
-  return normalizeLatexText(cleanAnalysisMarkdown(value, language));
+  return normalizeQuizMathText(normalizeLatexText(cleanAnalysisMarkdown(cleanFinalAnswerChunk(value), language)));
 }
 
 function sanitizeOriginalExplanation(originalExplanation: OriginalExplanation, language: AppLanguage) {

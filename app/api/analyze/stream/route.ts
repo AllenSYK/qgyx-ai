@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { apiError } from "@/lib/api-response";
 import { appendFinalAnswerRules, cleanFinalAnswerChunk } from "@/lib/ai/finalAnswerMode";
+import { cleanAnalysisMarkdown } from "@/lib/analysisMarkdown";
 import {
   JOB_PROGRESS,
   originalExplanationToAnalysisResult,
@@ -17,6 +18,7 @@ import {
 import type { OriginalExplanation } from "@/lib/ai/schema";
 import { getCurrentUser } from "@/lib/auth";
 import { normalizeLanguage, type AppLanguage } from "@/lib/language";
+import { normalizeQuizMathText } from "@/lib/quiz-math";
 import {
   createGenerationAllowancePayload,
   deductGenerationCredit,
@@ -81,44 +83,46 @@ function selectModel(plan: string | null) {
 
 function buildSystemPrompt() {
   const prompt = `
-你是一个专业数学老师。
-你正在为学生讲解图片中的题目。
+你是一个专业题目解析老师。你正在为学生讲解图片中的题目。
 
 输出规则必须严格遵守：
 
 1. 只输出 Markdown，不输出 JSON。
-2. 中文讲解要自然、分步骤。
-3. 行内公式必须使用 \\( ... \\)。
-4. 独立公式必须使用 \\[ ... \\]。
-5. 多行推导必须使用：
-\\[
-\\begin{aligned}
-...
-\\end{aligned}
-\\]
-6. 禁止使用 $$。
-7. 禁止输出裸 LaTeX，例如不能直接输出 \\frac{1}{2}、\\sum、\\binom、\\begin{aligned}、x^{2}。
-8. 所有数学公式必须被 \\( ... \\) 或 \\[ ... \\] 包裹。
-9. 不要把公式放进代码块。
-10. 不要输出 HTML。
-11. 如果看不清题目，先说明图片部分不清晰，然后给出你能识别的内容。
-12. 解题时按“题目识别 / 答案 / 解析”三段输出。
+2. 只输出最终整理后的答案，不输出思考过程、试错过程、自我反驳或自我修正。
+3. 禁止出现“等等、不对、刚才错了、我重新看、让我检查、可能是、前面有误、换一种思路”等话术。
+4. 结构固定为：
+## 题目
+一行写出识别到的题目。
+
+## 答案
+直接给出最终答案。
+
+## 解析
+1. 关键步骤一。
+2. 关键步骤二。
+最多 4 步，简洁清楚。
+
+## 易错点
+- 写 1 条真正容易错的点。
+5. 行内公式必须使用 $...$，独立公式必须使用 $$...$$。
+6. 禁止输出裸 LaTeX，例如不能直接输出 \\frac{1}{2}、\\sum、\\binom、x^{2}。
+7. 不要把公式放进代码块，不要输出 HTML。
+8. 如果看不清题目，只输出“题目不清晰，请重新上传更完整的题目图片。”，不要猜题。
 `.trim();
   return appendFinalAnswerRules(prompt);
 }
 
 function buildUserPrompt() {
   return [
-    "请识别图片中的题目，并像 Chatbox 一样实时讲解。",
-    "请直接开始解题。",
+    "请识别图片中的题目，并直接给出最终答案和简洁解析。",
     "要求：",
-    "- 先输出题目识别",
-    "- 再输出答案",
-    "- 再输出详细解析",
+    "- 不展示思考、自我检查或修正过程",
+    "- 答案必须明确",
+    "- 解析只写关键步骤",
     "- 数学公式必须可被 KaTeX 渲染",
     "- 不要输出 JSON",
     "- 不要输出代码块",
-    "- 不要使用 $$"
+    "- 公式必须使用 $...$ 或 $$...$$ 包裹"
   ].join("\n");
 }
 
@@ -500,7 +504,7 @@ function extractQuestionText(markdown: string) {
       .trim()
       .toLowerCase();
 
-    if (["题目识别", "识别到的题目", "question", "problem", "recognized question"].includes(label)) {
+    if (["题目", "题目识别", "识别到的题目", "question", "problem", "recognized question"].includes(label)) {
       capturing = true;
       continue;
     }
@@ -532,6 +536,16 @@ function originalExplanationFromStreamMarkdown(markdown: string, language: AppLa
   return original;
 }
 
+function cleanStreamMarkdown(markdown: string, language: AppLanguage) {
+  const cleaned = normalizeQuizMathText(cleanAnalysisMarkdown(cleanFinalAnswerChunk(markdown), language)).trim();
+
+  if (cleaned) {
+    return cleaned;
+  }
+
+  return normalizeQuizMathText(cleanFinalAnswerChunk(markdown)).trim();
+}
+
 async function createUpstreamQwenStream({
   model,
   imageUrl
@@ -548,6 +562,7 @@ async function createUpstreamQwenStream({
     body: JSON.stringify({
       model,
       stream: true,
+      enable_thinking: false,
       stream_options: {
         include_usage: true
       },
@@ -764,10 +779,19 @@ export async function POST(req: NextRequest) {
             throw new AnalyzeStreamError("AI 没有返回有效解析内容，请稍后重试。", 503);
           }
 
-          const originalExplanation = originalExplanationFromStreamMarkdown(fullMarkdown, language);
+          const cleanedMarkdown = cleanStreamMarkdown(fullMarkdown, language);
+          const rawQuestionText = extractQuestionText(fullMarkdown);
+          const parsedOriginalExplanation = originalExplanationFromStreamMarkdown(cleanedMarkdown || fullMarkdown, language);
+          const originalExplanation = rawQuestionText
+            ? normalizeOriginalExplanationShape({
+                ...parsedOriginalExplanation,
+                detectedText: rawQuestionText,
+                title: rawQuestionText.replace(/\s+/g, " ").slice(0, 120)
+              })
+            : parsedOriginalExplanation;
           const canGenerateQuiz = mode !== "analysis" && isUsableOriginalExplanation(originalExplanation);
           const nextStatus = finalStatusForMode(mode, canGenerateQuiz);
-          const detectedText = originalExplanation.detectedText || extractQuestionText(fullMarkdown);
+          const detectedText = rawQuestionText || originalExplanation.detectedText;
           const ocrHash = detectedText ? createTextHash(detectedText) : null;
 
           const row = await updateJobAndReturn(admin, jobId as string, nextStatus, {
@@ -858,7 +882,7 @@ export async function POST(req: NextRequest) {
             language,
             cached: false,
             model,
-            analysisText: fullMarkdown,
+            analysisText: cleanedMarkdown || fullMarkdown,
             analysisRecordId:
               analysisRecordResult.status === "fulfilled" ? analysisRecordResult.value : null,
             ...createGenerationAllowancePayload(refreshedAllowance),
@@ -917,7 +941,7 @@ export async function POST(req: NextRequest) {
             progress: 100,
             stage: fullMarkdown.trim() ? "解析中断，已保留已生成内容" : "生成失败，可重试",
             errorMessage: message,
-            analysisText: fullMarkdown
+            analysisText: fullMarkdown.trim() ? cleanStreamMarkdown(fullMarkdown, language) : fullMarkdown
           });
         } finally {
           controller.close();

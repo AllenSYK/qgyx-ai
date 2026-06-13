@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import type { ElementType, ReactNode } from "react";
+import { normalizeQuizMathText } from "@/lib/quiz-math";
 
 type Props = {
   content?: string | null;
@@ -60,7 +61,7 @@ export default function MarkdownRenderer({
   className,
   as = "div"
 }: Props) {
-  const value = toRemarkMathSyntax(String(content ?? text ?? children ?? ""));
+  const value = toRemarkMathSyntax(normalizeQuizMathText(String(content ?? text ?? children ?? "")));
   const Wrapper = as as ElementType;
   const inline = as === "span";
   const wrapperClassName = ["markdown-renderer math-text", className].filter(Boolean).join(" ");

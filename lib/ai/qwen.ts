@@ -29,7 +29,6 @@ export function getVisionModelForTier(tier: MembershipTier): string {
 }
 
 export function shouldEnableThinking(tier: MembershipTier, isComplex: boolean): boolean {
-  if (tier === "max" && isComplex) return true;
   return false;
 }
 

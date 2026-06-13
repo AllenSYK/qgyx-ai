@@ -4,11 +4,12 @@ import type {
   QuizResult,
   WrongExplanation
 } from "@/lib/ai/schema";
+import { cleanFinalAnswerChunk } from "@/lib/ai/finalAnswerMode";
 import { normalizeLatexText } from "@/lib/latex";
 import { normalizeQuizMathText } from "@/lib/quiz-math";
 
 function cleanText(value: string) {
-  return normalizeLatexText(value);
+  return normalizeQuizMathText(normalizeLatexText(cleanFinalAnswerChunk(value)));
 }
 
 function cleanTextArray(value: string[] | undefined) {
