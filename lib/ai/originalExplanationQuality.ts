@@ -5,7 +5,7 @@ import type { OriginalExplanation } from "@/lib/ai/schema";
 export const UNRECOGNIZABLE_QUESTION_MARKER = "UNRECOGNIZABLE_QUESTION";
 
 const BAD_FINAL_RESPONSE_PATTERN =
-  /图片内容较复杂|根据图片中可见信息|根据可见信息|系统已尝试|黑边|浏览器边框|手机截图边框|请重新上传|请裁剪|裁剪黑边|题目区域识别失败|识别失败|更聚焦的题目图片/;
+  /图片内容较复杂|根据图片中可见信息|根据可见信息|系统已尝试|黑边|浏览器边框|手机截图边框|请重新上传|请裁剪|裁剪黑边|题目区域识别失败|识别失败|更聚焦的题目图片|模型未返回单独解析段|答案已包含在解析结论中|The model did not return|answer is included|Core method|核心方法/;
 
 const UNRECOGNIZED_PATTERN = /无法识别|未能识别|未识别到题目|题目识别不完整|UNRECOGNIZABLE_QUESTION/;
 

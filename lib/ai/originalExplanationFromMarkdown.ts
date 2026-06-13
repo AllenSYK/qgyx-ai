@@ -37,6 +37,29 @@ function compact(value: string, fallback: string, maxLength: number) {
   return next.length > maxLength ? next.slice(0, maxLength) : next;
 }
 
+function isPlaceholderText(value: string) {
+  return /模型未返回|答案已包含|Core method|核心方法|The model did not return|answer is included/i.test(value);
+}
+
+function compactRealText(value: string, fallback: string, maxLength: number) {
+  const text = normalizeLines(value || "").trim();
+  const next = text && !isPlaceholderText(text) ? text : fallback;
+  return next.length > maxLength ? next.slice(0, maxLength) : next;
+}
+
+function getInlineSection(line: string): { key: NonNullable<ReturnType<typeof getAnalysisSectionKeyFromHeading>>; content: string } | null {
+  const match = line.match(/^\s*(?:#{1,6}\s*)?(?:\d+[.)、]\s*)?(.{1,32}?)\s*[:：]\s*(.+?)\s*$/);
+  if (!match) return null;
+
+  const key = getAnalysisSectionKeyFromHeading(match[1]);
+  if (!key) return null;
+
+  return {
+    key,
+    content: match[2].trim()
+  };
+}
+
 function splitSections(markdown: string): ParsedSections {
   const sections: ParsedSections = {
     preamble: [],
@@ -49,6 +72,19 @@ function splitSections(markdown: string): ParsedSections {
   let current: keyof ParsedSections = "preamble";
 
   for (const line of normalizeLines(markdown).split("\n")) {
+    const inlineSection = getInlineSection(line);
+
+    if (inlineSection) {
+      if (inlineSection.key === "question") {
+        current = "preamble";
+        continue;
+      }
+
+      current = inlineSection.key;
+      sections[current].push(inlineSection.content);
+      continue;
+    }
+
     const key = getAnalysisSectionKeyFromHeading(line);
 
     if (key === "question") {
@@ -79,6 +115,28 @@ function splitList(lines: string[], maxItems: number) {
     .slice(0, maxItems);
 }
 
+function extractLikelyAnswer(text: string, language: AppLanguage) {
+  const lines = normalizeLines(text)
+    .split("\n")
+    .map((line) => stripMarkdown(line).trim())
+    .filter((line) => line && !isPlaceholderText(line))
+    .reverse();
+
+  for (const line of lines) {
+    const match = line.match(/(?:最终答案|正确答案|答案|所以|因此|故|可得|得到|Answer|Therefore|Thus)\s*[:：，,]?\s*(.+)$/i);
+    const answer = match?.[1]?.trim();
+
+    if (answer && answer.length <= 240) {
+      return answer;
+    }
+  }
+
+  const mathLine = lines.find((line) => /[=<>]|\\frac|\\sqrt|\\pi|\$/.test(line) && line.length <= 240);
+  if (mathLine) return mathLine;
+
+  return language === "en" ? "See the conclusion in the explanation." : "见解析结论。";
+}
+
 function guessSubject(text: string, language: AppLanguage) {
   if (/函数|方程|几何|代数|概率|导数|积分|三角|向量|矩阵|坐标|Math|Equation|Geometry/i.test(text)) {
     return language === "en" ? "Mathematics" : "数学";
@@ -99,14 +157,32 @@ function inferTopic(knowledgePoints: string[], subject: string, language: AppLan
   const firstPoint = knowledgePoints[0]?.trim();
   if (firstPoint) return compact(stripMarkdown(firstPoint), subject, 80);
   if (subject !== (language === "en" ? "General" : "综合")) return subject;
-  return language === "en" ? "Core method" : "核心方法";
+  return language === "en" ? "Original problem method" : "原题方法";
+}
+
+function inferTopicFromText(text: string, subject: string, language: AppLanguage) {
+  if (language === "en") {
+    if (/integral|volume|solid of revolution|\\int/i.test(text)) return "Integral application";
+    if (/derivative|differentiate|dy\/dx/i.test(text)) return "Derivatives";
+    if (/trigonometric|sin|cos|tan/i.test(text)) return "Trigonometry";
+    if (/equation|solve/i.test(text)) return "Equation solving";
+    return inferTopic([], subject, language);
+  }
+
+  if (/旋转体|体积|积分|\\int|∫/.test(text)) return "旋转体体积与积分";
+  if (/导数|微分|求导|dy\/dx|\\frac\{dy\}\{dx\}/.test(text)) return "导数与微分";
+  if (/三角|正弦|余弦|sin|cos|tan|\\sin|\\cos|\\tan/.test(text)) return "三角函数";
+  if (/方程|解方程|根/.test(text)) return "方程求解";
+  if (/函数|图像|坐标/.test(text)) return "函数与图像";
+
+  return inferTopic([], subject, language);
 }
 
 function deriveKeySteps(explanation: string, language: AppLanguage) {
   const steps = normalizeLines(explanation)
     .split("\n")
     .map((line) => stripMarkdown(line))
-    .filter((line) => line && !/^\([a-z]\)$/i.test(line))
+    .filter((line) => line && !isPlaceholderText(line) && !/^\([a-z]\)$/i.test(line))
     .slice(0, 4);
 
   if (steps.length > 0) return steps;
@@ -194,23 +270,31 @@ export function createOriginalExplanationFromMarkdown(markdown: string, language
   const sections = splitSections(normalized);
   const answerSection = joinSection(sections.answer);
   const explanationSection = joinSection(sections.explanation);
+  const preambleSection = joinSection(sections.preamble);
+  const fallbackSource = compactRealText(
+    [explanationSection, preambleSection, answerSection, normalized].filter(Boolean).join("\n\n"),
+    normalized,
+    6000
+  );
   const knowledgePoints = splitList(sections.knowledge, 4);
   const similarIdeas = splitList(sections.similar, 2);
   const mistakeItems = splitList(sections.mistakes, 2);
-  const subject = guessSubject(normalized, outputLanguage);
-  const topic = inferTopic(knowledgePoints, subject, outputLanguage);
-  const explanationFallback =
+  const subject = guessSubject([normalized, markdown].join("\n"), outputLanguage);
+  const topic = knowledgePoints.length
+    ? inferTopic(knowledgePoints, subject, outputLanguage)
+    : inferTopicFromText([normalized, markdown].join("\n"), subject, outputLanguage);
+  const explanationFallback = fallbackSource || (
     outputLanguage === "en"
-      ? "The model did not return a separate explanation section."
-      : "模型未返回单独解析段，已保留答案段中的结论。";
-  const answerFallback =
-    outputLanguage === "en"
-      ? "The answer is included in the explanation conclusion."
-      : "答案已包含在解析结论中。";
-  const explanation = compact(explanationSection, explanationFallback, 6000);
-  const finalAnswer = compact(answerSection, answerFallback, 2000);
-  const detectedText = compact([finalAnswer, explanation].filter(Boolean).join("\n\n"), topic, 2500);
-  const keySteps = deriveKeySteps(explanationSection || answerSection, outputLanguage);
+      ? "Use the given conditions and formula to compute the result."
+      : "根据题干条件列式计算，整理得到最终答案。"
+  );
+  const answerFallback = answerSection && !isPlaceholderText(answerSection)
+    ? answerSection
+    : extractLikelyAnswer(fallbackSource || normalized || markdown, outputLanguage);
+  const explanation = compactRealText(explanationSection, explanationFallback, 6000);
+  const finalAnswer = compactRealText(answerSection, answerFallback, 2000);
+  const detectedText = compactRealText([finalAnswer, explanation].filter(Boolean).join("\n\n"), topic, 2500);
+  const keySteps = deriveKeySteps(explanationSection || fallbackSource || answerSection, outputLanguage);
 
   return {
     title: compact(stripMarkdown(topic), subject, 120),
