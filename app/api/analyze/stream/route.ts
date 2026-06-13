@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import crypto from "crypto";
 import { apiError } from "@/lib/api-response";
+import { getAnalysisSectionKeyFromHeading, shouldDropAnalysisLine } from "@/lib/analysisMarkdown";
 import { appendFinalAnswerRules, cleanFinalAnswerChunk } from "@/lib/ai/finalAnswerMode";
 import {
   JOB_PROGRESS,
@@ -40,6 +41,7 @@ const DASHSCOPE_API_KEY = process.env.DASHSCOPE_API_KEY || process.env.QWEN_API_
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const studyModes: StudyMode[] = ["quiz", "analysis", "quiz_analysis"];
+const displaySectionKeys = new Set(["question", "explanation", "answer"]);
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
 
@@ -79,21 +81,43 @@ function selectModel(plan: string | null) {
   return process.env.QWEN_VL_FLASH_MODEL || "qwen3-vl-flash";
 }
 
-function buildSystemPrompt() {
-  const prompt = `
-你是一个专业题目解析老师。你正在为学生讲解图片中的题目。
+function buildSystemPrompt(language: AppLanguage) {
+  const prompt = language === "en"
+    ? `
+You are a clear and concise problem-solving teacher.
+
+Rules:
+1. Output Markdown only, never JSON.
+2. Output only the final polished explanation. Do not show thinking, trial-and-error, self-correction, checking, or internal reasoning.
+3. Never write phrases like "wait", "actually", "I made a mistake", "let me check", "maybe", "recalculate", or "try another way".
+4. Use exactly these three sections:
+## Question
+Recognize the problem. Keep the key conditions, formulas, and the actual question.
+
+## Process
+Write 3-5 short, easy-to-understand steps. Explain why each key formula or substitution is used. Keep it clear, not overly long.
+
+## Answer
+Give the final answer directly.
+5. Inline formulas must use $...$; display formulas must use $$...$$.
+6. Never output naked LaTeX such as \\frac{1}{2}, \\sum, \\binom, or x^{2}.
+7. Do not output extra sections such as mistakes, knowledge points, similar ideas, detailed derivations, checks, verification, or recalculation.
+8. If the problem is unreadable, output only: "The problem is unclear. Please upload a clearer and complete image."
+`
+    : `
+你是一个讲解清楚、表达简洁的题目解析老师。
 
 输出规则必须严格遵守：
 
 1. 只输出 Markdown，不输出 JSON。
-2. 只输出最终整理后的答案，不输出思考过程、试错过程、自我反驳或自我修正。
-3. 禁止出现“等等、不对、刚才错了、我重新看、让我检查、可能是、前面有误、换一种思路”等话术。
+2. 只输出最终整理后的答案，不输出思考过程、试错过程、自我反驳、自我修正、检查或内部推理。
+3. 禁止出现“等等、不对、刚才错了、我重新看、让我检查、可能是、前面有误、换一种思路、重新计算”等话术。
 4. 结构固定为，只能有这三段：
 ## 题目
-先输出识别到的题目，保留题干、条件、公式和问法。
+识别题目，保留关键条件、公式和问法。
 
 ## 过程
-最多 3 行，只写必要公式和关键步骤，必须简单易懂。
+写 3-5 个短步骤。每一步要说明为什么这样列式或代入，让学生能看懂，但不要长篇展开。
 
 ## 答案
 直接给出最终答案。
@@ -101,22 +125,35 @@ function buildSystemPrompt() {
 6. 禁止输出裸 LaTeX，例如不能直接输出 \\frac{1}{2}、\\sum、\\binom、x^{2}。
 7. 不要输出“易错点、知识点、类似题思路、详细步骤、检查、验证、重新计算”等额外段落。
 8. 如果看不清题目，只输出“题目不清晰，请重新上传更完整的题目图片。”，不要猜题。
-`.trim();
+`;
   return appendFinalAnswerRules(prompt);
 }
 
-function buildUserPrompt() {
+function buildUserPrompt(language: AppLanguage) {
+  if (language === "en") {
+    return [
+      "Recognize the problem in the image, then give a clear final answer with a simple explanation.",
+      "Requirements:",
+      "- Output Question first.",
+      "- Do not show thinking, checking, or self-correction.",
+      "- The answer must be clear.",
+      "- The Process section should have 3-5 short and understandable steps.",
+      "- Math formulas must be KaTeX-renderable.",
+      "- Do not output JSON or code blocks.",
+      "- Formulas must be wrapped in $...$ or $$...$$."
+    ].join("\n");
+  }
+
   return [
-    "请识别图片中的题目，并直接给出最终答案和简洁解析。",
+    "请识别图片中的题目，并直接给出最终答案和清晰易懂的过程。",
     "要求：",
-    "- 先输出题目识别",
-    "- 不展示思考、自我检查或修正过程",
-    "- 答案必须明确",
-    "- 过程最多 3 行，只写关键步骤",
-    "- 数学公式必须可被 KaTeX 渲染",
-    "- 不要输出 JSON",
-    "- 不要输出代码块",
-    "- 公式必须使用 $...$ 或 $$...$$ 包裹"
+    "- 先输出题目识别。",
+    "- 不展示思考、自我检查或修正过程。",
+    "- 答案必须明确。",
+    "- 过程写 3-5 个短步骤，要能让学生看懂。",
+    "- 数学公式必须可被 KaTeX 渲染。",
+    "- 不要输出 JSON 或代码块。",
+    "- 公式必须使用 $...$ 或 $$...$$ 包裹。"
   ].join("\n");
 }
 
@@ -530,15 +567,64 @@ function originalExplanationFromStreamMarkdown(markdown: string, language: AppLa
 }
 
 function cleanStreamMarkdown(markdown: string, language: AppLanguage) {
-  return normalizeQuizMathText(cleanFinalAnswerChunk(markdown)).trim();
+  return normalizeQuizMathText(cleanFinalAnswerChunk(filterDisplayMarkdown(markdown, language))).trim();
+}
+
+function displayHeadingForKey(key: string, language: AppLanguage) {
+  const isEn = language === "en";
+
+  if (key === "question") return isEn ? "Question" : "题目";
+  if (key === "explanation") return isEn ? "Process" : "过程";
+  return isEn ? "Answer" : "答案";
+}
+
+function createDisplayMarkdownFilter(language: AppLanguage) {
+  let droppingExtraSection = false;
+
+  return (markdown: string) => {
+    const output: string[] = [];
+    const parts = String(markdown || "").match(/[^\n]*\n|[^\n]+/g) || [];
+
+    for (const part of parts) {
+      const hasNewline = part.endsWith("\n");
+      const line = hasNewline ? part.slice(0, -1) : part;
+      const sectionKey = getAnalysisSectionKeyFromHeading(line);
+
+      if (sectionKey && !displaySectionKeys.has(sectionKey)) {
+        droppingExtraSection = true;
+        continue;
+      }
+
+      if (sectionKey && displaySectionKeys.has(sectionKey)) {
+        droppingExtraSection = false;
+        const level = line.match(/^\s*(#{1,6})/)?.[1] || "##";
+        output.push(`${level} ${displayHeadingForKey(sectionKey, language)}${hasNewline ? "\n" : ""}`);
+        continue;
+      }
+
+      if (droppingExtraSection || shouldDropAnalysisLine(line)) {
+        continue;
+      }
+
+      output.push(part);
+    }
+
+    return output.join("");
+  };
+}
+
+function filterDisplayMarkdown(markdown: string, language: AppLanguage) {
+  return createDisplayMarkdownFilter(language)(markdown);
 }
 
 async function createUpstreamQwenStream({
   model,
-  imageUrl
+  imageUrl,
+  language
 }: {
   model: string;
   imageUrl: string;
+  language: AppLanguage;
 }) {
   const upstream = await fetch(`${DASHSCOPE_BASE_URL.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
@@ -556,14 +642,14 @@ async function createUpstreamQwenStream({
       messages: [
         {
           role: "system",
-          content: buildSystemPrompt()
+          content: buildSystemPrompt(language)
         },
         {
           role: "user",
           content: [
             {
               type: "text",
-              text: buildUserPrompt()
+              text: buildUserPrompt(language)
             },
             {
               type: "image_url",
@@ -669,6 +755,7 @@ export async function POST(req: NextRequest) {
         let upstreamBuffer = "";
         let lineBuffer = "";
         let lastUsage: AiUsage | null = null;
+        const filterDisplayDelta = createDisplayMarkdownFilter(language);
 
         const sendEvent = (event: string, payload: Record<string, unknown>) => {
           controller.enqueue(encoder.encode(sseEncode(event, payload)));
@@ -689,7 +776,7 @@ export async function POST(req: NextRequest) {
 
           const ready = splitIndex === -1 ? lineBuffer : lineBuffer.slice(0, splitIndex + 1);
           lineBuffer = splitIndex === -1 ? "" : lineBuffer.slice(splitIndex + 1);
-          const delta = cleanFinalAnswerChunk(ready);
+          const delta = filterDisplayDelta(cleanFinalAnswerChunk(ready));
 
           if (delta) {
             fullMarkdown += delta;
@@ -756,7 +843,8 @@ export async function POST(req: NextRequest) {
         try {
           const upstreamBody = await createUpstreamQwenStream({
             model,
-            imageUrl
+            imageUrl,
+            language
           });
           const reader = upstreamBody.getReader();
 

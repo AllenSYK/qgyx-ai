@@ -4,7 +4,7 @@ type SectionKey = "answer" | "explanation" | "knowledge" | "mistakes" | "similar
 
 const HEADING_LABELS: Record<SectionKey, string[]> = {
   answer: ["answer", "final answer", "correct answer", "答案", "最终答案", "正确答案"],
-  explanation: ["explanation", "solution", "steps", "step-by-step solution", "解析", "过程", "简单过程", "分步骤解析", "解题过程", "解题思路", "关键步骤", "详细步骤"],
+  explanation: ["explanation", "solution", "process", "steps", "step-by-step solution", "解析", "过程", "简单过程", "分步骤解析", "解题过程", "解题思路", "关键步骤", "详细步骤"],
   knowledge: ["key points", "knowledge", "knowledge points", "知识点", "涉及知识点"],
   mistakes: ["common mistakes", "common errors", "mistakes", "易错点", "易错提醒", "常见错误"],
   similar: ["similar ideas", "similar problem ideas", "transfer ideas", "类似题思路", "类似题目思路", "迁移思路"],
@@ -13,7 +13,7 @@ const HEADING_LABELS: Record<SectionKey, string[]> = {
 
 const ZH_HEADINGS: Record<Exclude<SectionKey, "question">, string> = {
   answer: "答案",
-  explanation: "解析",
+  explanation: "过程",
   knowledge: "知识点",
   mistakes: "易错点",
   similar: "类似题思路"
@@ -21,7 +21,7 @@ const ZH_HEADINGS: Record<Exclude<SectionKey, "question">, string> = {
 
 const EN_HEADINGS: Record<Exclude<SectionKey, "question">, string> = {
   answer: "Answer",
-  explanation: "Explanation",
+  explanation: "Process",
   knowledge: "Key Points",
   mistakes: "Common Mistakes",
   similar: "Similar Ideas"

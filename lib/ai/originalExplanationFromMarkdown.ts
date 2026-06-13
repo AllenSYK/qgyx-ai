@@ -229,14 +229,14 @@ export function markdownFromOriginalExplanation(original: OriginalExplanation, l
     .split("\n")
     .map((line) => stripMarkdown(line).trim())
     .filter((line) => line && !isPlaceholderText(line))
-    .slice(0, 4);
+    .slice(0, 5);
   const processFallback =
     keySteps.length > 0
-      ? keySteps.slice(0, 3).map((step, index) => `${index + 1}. ${step}`).join("\n")
+      ? keySteps.slice(0, 5).map((step, index) => `${index + 1}. ${step}`).join("\n")
       : outputLanguage === "en"
         ? "Use the given condition, apply the formula, and simplify."
         : "代入题干条件，套用对应公式，整理结果。";
-  const process = compact(processLines.join("\n"), processFallback, 900);
+  const process = compact(processLines.join("\n"), processFallback, 1200);
   const answer = compact(
     stripMarkdown(original.finalAnswer || ""),
     outputLanguage === "en" ? "See the result above." : "见上方结果。",

@@ -153,8 +153,13 @@ function buildMessages({
     '所有输出要像考试试卷：detectedText、finalAnswer、explanation、keySteps、commonMistake、knowledgePoints、similarIdeas、steps、formulas 中凡是可以用数学形式表达的内容，都必须写成标准数学形式。\n' +
     mathOutputInstruction + '\n';
 
+  const languageRule =
+    language === 'en'
+      ? '输出语言是 English：所有 JSON 字段值必须只用英文，不要输出中文讲解。'
+      : '输出语言是中文：所有 JSON 字段值必须只用中文，不要输出英文讲解。';
+
   const completenessRule = isComplex
-    ? '数学推导必须完整但简洁，不能停在中间式。explanation 最多 3 行，只保留必要公式和关键步骤。'
+    ? '数学推导必须完整但简洁，不能停在中间式。explanation 写 3-5 个简短清楚步骤，说明关键公式或代入原因。'
     : '';
 
   const retryPrefix =
@@ -164,8 +169,8 @@ function buildMessages({
     '你是拍题解析助手。请直接识别并解析图片中的真实题目，只输出 JSON。看不清具体题目时只输出 ' + imgClearErr + '。禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、自我检查、自我纠错、自我反驳、' + '<think>' + ' 标签。禁止输出“等等、不对、刚才错了、我重新看、让我检查、可能是、前面有误、换一种思路”等话术。禁止输出“图片复杂、根据可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别”等兜底话术。解析要短，只输出题目、简单过程、答案需要的信息；';
 
   const system = retry
-    ? retryPrefix + mathRule + completenessRule + 'explanation 最多 3 行，keySteps<=3，knowledgePoints<=2，similarIdeas=1，steps 和 formulas 可留空。输出语言：' + outputLanguage + '。'
-    : normalPrefix + mathRule + completenessRule + 'explanation 最多 3 行，keySteps<=3，knowledgePoints<=2，similarIdeas=1，steps 和 formulas 可留空。输出语言：' + outputLanguage + '。';
+    ? retryPrefix + mathRule + completenessRule + 'explanation 写 3-5 个短步骤，keySteps<=4，knowledgePoints<=2，similarIdeas=1，steps 和 formulas 可留空。输出语言：' + outputLanguage + '。' + languageRule
+    : normalPrefix + mathRule + completenessRule + 'explanation 写 3-5 个短步骤，keySteps<=4，knowledgePoints<=2，similarIdeas=1，steps 和 formulas 可留空。输出语言：' + outputLanguage + '。' + languageRule;
 
   if (tier === 'max' && isComplex) {
     const systemContent =
@@ -174,7 +179,7 @@ function buildMessages({
       ORIGINAL_EXPLANATION_JSON_SHAPE;
 
     const userText =
-      '请识别并解析图片中的数学题目。要求：1) 一次给出确定答案 2) 过程最多 3 行，不展示试错或纠错过程 3) 只写必要公式 4) 最终答案必须与过程一致。图像摘要：' + (imageSummary || '无');
+      '请识别并解析图片中的数学题目。要求：1) 一次给出确定答案 2) 过程写 3-5 个短步骤，不展示试错或纠错过程 3) 只写必要公式和代入原因 4) 最终答案必须与过程一致。图像摘要：' + (imageSummary || '无');
 
     return [
       {

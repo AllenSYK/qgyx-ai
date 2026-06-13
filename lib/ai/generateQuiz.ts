@@ -106,7 +106,7 @@ ${hasUsableExplanation ? JSON.stringify({
       messages,
       temperature: 0.05,
       enable_thinking: false,
-      max_tokens: 1000,
+      max_tokens: 1600,
       timeoutMs: 30000
     });
     rawText = readAssistantText(data);

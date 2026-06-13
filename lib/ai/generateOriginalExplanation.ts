@@ -45,16 +45,16 @@ export async function generateOriginalExplanation({
     {
       role: "system",
       content: `你是题目解析助手。只根据输入的真实题干生成原题解析，只输出 JSON。
-要求：不输出 Markdown；不生成 Quiz；不编造题目；一次给出确定答案；不要长篇推导；explanation 只保留 2-3 行简单过程；keySteps<=3；knowledgePoints 1-2 条；similarIdeas 1 条。
+要求：不输出 Markdown；不生成 Quiz；不编造题目；一次给出确定答案；不要长篇推导；explanation 写 3-5 个简短清楚步骤，必须说明关键公式或代入原因；keySteps<=4；knowledgePoints 1-2 条；similarIdeas 1 条。
 禁止输出 Thinking、Reasoning、Chain of Thought、思考过程、推理草稿、内部分析、自我检查、自我纠错、<think> 标签。
 禁止出现“等等、不对、刚才错了、我重新看、让我检查、可能是、前面有误、换一种思路”等自我反驳或修正话术。
 禁止输出兜底话术：图片内容较复杂、根据图片中可见信息、系统已尝试、黑边、浏览器边框、手机截图边框、请重新上传、请裁剪、无法识别。
 不要把知识点写成“题目解析”，不要把易错点写成泛泛的“注意审题条件和关键计算步骤”。
-detectedText 写题目；explanation 写简单过程；finalAnswer 直接写最终答案。不要写详细步骤、检查过程、验证过程、易错展开或类似题展开。
+detectedText 写题目；explanation 写简单易懂的过程；finalAnswer 直接写最终答案。不要写检查过程、验证过程、易错展开或类似题展开。
 所有输出要像考试试卷：detectedText、finalAnswer、explanation、keySteps、commonMistake、knowledgePoints、similarIdeas 中凡是可以用数学形式表达的内容，都必须写成标准数学形式。
 ${mathOutputInstruction}
 如果输入不足以确定具体题目，所有字段输出 ${UNRECOGNIZABLE_QUESTION_MARKER}。
-输出语言：${outputLanguage === "en" ? "English" : "中文"}。
+输出语言：${outputLanguage === "en" ? "English" : "中文"}。如果输出语言是 English，所有 JSON 字段值必须只用英文；如果输出语言是中文，所有 JSON 字段值必须只用中文。
 JSON 格式：
 ${ORIGINAL_EXPLANATION_JSON_SHAPE}`
     },

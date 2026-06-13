@@ -177,21 +177,18 @@ function waitForPaint() {
 
 function buildAnalysisMarkdown(analysis: AnalysisResult, language: AppLanguage) {
   const isEn = language === "en";
+  const question = analysis.recognizedText?.trim() || (isEn ? "The problem text was not returned." : "题目内容暂不完整。");
+  const process = analysis.explanation?.trim() || (isEn ? "Use the given conditions and apply the matching formula." : "代入题干条件，使用对应公式整理。");
+  const answer = analysis.answer?.trim() || (isEn ? "No answer was returned." : "暂未返回答案。");
   const sections = [
+    `## ${isEn ? "Question" : "题目"}`,
+    question,
+    "",
+    `## ${isEn ? "Process" : "过程"}`,
+    process,
+    "",
     `## ${isEn ? "Answer" : "答案"}`,
-    analysis.answer,
-    "",
-    `## ${isEn ? "Explanation" : "解析"}`,
-    analysis.explanation,
-    "",
-    analysis.knowledgePoints?.length ? `## ${isEn ? "Key Points" : "知识点"}` : "",
-    ...(analysis.knowledgePoints || []).slice(0, 4).map((item) => `- ${item}`),
-    "",
-    analysis.commonMistakes?.length ? `## ${isEn ? "Common Mistakes" : "易错点"}` : "",
-    ...(analysis.commonMistakes || []).slice(0, 2).map((item) => `- ${item}`),
-    "",
-    analysis.similarIdeas?.length ? `## ${isEn ? "Similar Ideas" : "类似题思路"}` : "",
-    ...(analysis.similarIdeas || []).slice(0, 2).map((item) => `- ${item}`)
+    answer
   ];
 
   return sections
